@@ -8,20 +8,21 @@ Implementation plan. Check items off as they are completed.
 - LLM access through OpenRouter (OpenAI-compatible); the model is set by environment variable.
 - Interface is a CLI chat loop.
 - Work happens directly on `main`.
-- Pending confirmation: the nurse states placement needs in conversation (slots); the patient record holds identity only.
-- Pending confirmation: the workflow asks the nurse to confirm the proposed bed before any assignment is attempted.
+- The nurse states placement needs in conversation (slots); the patient record holds identity and sex only.
+- The workflow asks the nurse to confirm the proposed bed before any assignment is attempted.
+- Trims from the original domain sketch: no reservations table (the `RESERVED` bed status covers it), one shared-room field (`sex`), IDs double as human-readable labels.
 
 ## 1. Backend
 
-- [ ] Docker Compose with FastAPI and PostgreSQL; `.env.example` covers all config
-- [ ] SQLAlchemy models: ward, room, bed, patient, assignment, escalation
-- [ ] Seed data: fictional, with one case per demo scenario and failure path
-- [ ] Eligibility service: deterministic rules, returns a rejection reason per ineligible bed
-- [ ] Ranking: simple and deterministic, separate from eligibility
-- [ ] Endpoints: patient lookup, eligible-bed search, assignment, escalation
-- [ ] Assignment revalidates eligibility in a transaction and returns `409` on conflict
-- [ ] Tests: eligibility rules, assignment conflict, escalation
-- [ ] Ruff clean; single documented test command
+- [x] Docker Compose with FastAPI and PostgreSQL; `.env.example` covers all config
+- [x] SQLAlchemy models: ward, room, bed, patient, assignment, escalation
+- [x] Seed data: fictional, with one case per demo scenario and failure path
+- [x] Eligibility service: deterministic rules, returns a rejection reason per ineligible bed
+- [x] Ranking: simple and deterministic, separate from eligibility
+- [x] Endpoints: patient lookup, eligible-bed search, assignment, escalation
+- [x] Assignment revalidates eligibility in a transaction and returns `409` on conflict
+- [x] Tests: eligibility rules, assignment conflict, escalation
+- [x] Ruff clean; single documented test command
 
 ## 2. Assistant
 
