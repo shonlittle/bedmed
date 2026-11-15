@@ -19,14 +19,14 @@ The plan is tracked in [docs/TODO.md](docs/TODO.md).
 
 ## Run it
 
-Requires Docker.
+Requires Docker and `make`. Run `make help` to list every command; each one is a thin wrapper around `docker compose`, defined in the [Makefile](Makefile).
 
 ```bash
 cp .env.example .env
 ```
 
 ```bash
-docker compose up --build
+make up
 ```
 
 The API is at <http://localhost:8000>, with interactive docs at <http://localhost:8000/docs>. The database is seeded with fictional data on first start.
@@ -34,7 +34,13 @@ The API is at <http://localhost:8000>, with interactive docs at <http://localhos
 To reset the database to the seed data:
 
 ```bash
-docker compose run --rm api python -m api.seed
+make reset
+```
+
+To stop everything:
+
+```bash
+make down
 ```
 
 ## Chat with the assistant
@@ -42,13 +48,13 @@ docker compose run --rm api python -m api.seed
 Put an [OpenRouter](https://openrouter.ai) key in `.env` as `OPENROUTER_API_KEY`, then:
 
 ```bash
-docker compose run --rm assistant
+make chat
 ```
 
-Add `--trace` to see which workflow nodes ran and what each tool call did:
+Use the trace mode to see which workflow nodes ran and what each tool call did:
 
 ```bash
-docker compose run --rm assistant python -m assistant --trace
+make trace
 ```
 
 Things to try (reset the database between runs):
@@ -65,7 +71,7 @@ The default model is `anthropic/claude-haiku-5.5`. Set `BEDMED_MODEL` in `.env` 
 ## Test it
 
 ```bash
-docker compose run --rm api pytest
+make test
 ```
 
 Tests run against a separate `bedmed_test` database in the same PostgreSQL container, so the race-condition test uses real row locks. The workflow tests replace the LLM with a scripted extractor and use the real API, so the suite needs no API key.
@@ -73,7 +79,7 @@ Tests run against a separate `bedmed_test` database in the same PostgreSQL conta
 Lint:
 
 ```bash
-docker compose run --rm api ruff check .
+make lint
 ```
 
 ## Backend

@@ -1,4 +1,4 @@
-"""Command-line chat. Run with `docker compose run --rm assistant` (add `--trace` to see the graph path)."""
+"""Command-line chat. Run with `make chat`, or `make trace` to see the graph path."""
 
 import argparse
 import logging

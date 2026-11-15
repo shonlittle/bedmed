@@ -30,7 +30,7 @@ services:
       retries: 15
 
   # The chat client. It is given the API's URL and an LLM key, and no database credentials.
-  # Start it with: docker compose run --rm assistant
+  # Start it with: make chat
   assistant:
     image: bedmed
     profiles: ["chat"]
