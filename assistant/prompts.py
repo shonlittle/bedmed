@@ -28,6 +28,9 @@ About the patient:
 - patient_id: the patient identifier, such as "P-1001". Copy it as written.
 - patient_name: the patient's name as written, if a name is given. Never put a name in patient_id,
   and never work out an ID from a name.
+- choice_number: only when the context says a numbered list of patients was shown and the user picks by position.
+  "the first one" or "number 1" is 1, "the second" is 2, and "the last one" is the size of the list.
+  Give the position only; other software maps it to a patient. Leave patient_id null.
 
 About the bed they need:
 - ward_type: MEDICAL, TELEMETRY, ICU or SURGICAL.
@@ -80,6 +83,10 @@ Context: collecting details; pending: patient_id.
 Message: "the second one, P-1005"
 Result: intent PROVIDE_INFO, patient_id "P-1005", others null.
 
+Context: collecting details; pending: patient_id. The user was shown a numbered list of 3 patients to choose from.
+Message: "the last one"
+Result: intent PROVIDE_INFO, choice_number 3, others null.
+
 Context: bed 4M-102B is awaiting confirmation.
 Message: "yes please"
 Result: intent CONFIRM, all details null.
@@ -115,19 +122,22 @@ Message:
 """
 
 
-def describe_context(stage: str, pending_slots: list[str], proposed_bed_id: str | None) -> str:
+def describe_context(stage: str, pending_slots: list[str], proposed_bed_id: str | None, option_count: int = 0) -> str:
     if proposed_bed_id:
         return f"bed {proposed_bed_id} is awaiting confirmation."
     if stage == "COLLECTING":
         pending = ", ".join(pending_slots) if pending_slots else "nothing"
-        return f"collecting details; pending: {pending}."
+        options = (
+            f" The user was shown a numbered list of {option_count} patients to choose from." if option_count else ""
+        )
+        return f"collecting details; pending: {pending}.{options}"
     return "nothing in progress."
 
 
 def build_extraction_messages(
-    message: str, stage: str, pending_slots: list[str], proposed_bed_id: str | None
+    message: str, stage: str, pending_slots: list[str], proposed_bed_id: str | None, option_count: int = 0
 ) -> list[dict[str, str]]:
-    context = describe_context(stage, pending_slots, proposed_bed_id)
+    context = describe_context(stage, pending_slots, proposed_bed_id, option_count)
     return [
         {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
         {"role": "user", "content": EXTRACTION_USER_TEMPLATE.format(context=context, message=message)},

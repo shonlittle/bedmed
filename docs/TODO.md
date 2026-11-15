@@ -40,6 +40,7 @@ Implementation plan. Check items off as they are completed.
 - [x] API: `GET /patients` (name and has-bed filters) and `GET /beds` (status filter)
 - [x] Identify a patient by name; ask when no patient or several patients match
 - [x] Patient status by name
+- [x] Pick a patient by position from the numbered list of matches ("the first one")
 - [x] List patients (all, with a bed, without a bed) and beds (all, by status)
 - [x] Seed patient sharing a surname, to demonstrate an ambiguous name
 - [x] Tests for the endpoints, name lookup and lists

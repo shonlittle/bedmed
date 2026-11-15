@@ -55,6 +55,7 @@ class WorkflowState(TypedDict):
     rejection_summary: dict[str, int]
     proposed_bed_id: str | None
     declined_bed_ids: list[str]
+    patient_options: list[dict]
 
 
 def fresh_request() -> dict:
@@ -68,6 +69,7 @@ def fresh_request() -> dict:
         "rejection_summary": {},
         "proposed_bed_id": None,
         "declined_bed_ids": [],
+        "patient_options": [],
     }
 
 
@@ -82,6 +84,11 @@ READ_ONLY_NODES = {
     Intent.LIST_PATIENTS: "list_patients",
     Intent.LIST_BEDS: "list_beds",
 }
+
+
+def picks_an_option(state: WorkflowState) -> bool:
+    """The user chose by position from the numbered list of patients they were shown."""
+    return bool(state["patient_options"]) and state["extraction"].choice_number is not None
 
 
 def changes_slots(state: WorkflowState) -> bool:
@@ -99,7 +106,7 @@ def route_after_interpret(state: WorkflowState) -> str:
         return "cancel"
     if extraction.intent in READ_ONLY_NODES:
         return READ_ONLY_NODES[extraction.intent]
-    if changes_slots(state) or extraction.patient_name:
+    if changes_slots(state) or extraction.patient_name or picks_an_option(state):
         # New or corrected details always restart the search, even while a bed awaits confirmation.
         return "collect"
     if state["stage"] is Stage.AWAITING_CONFIRMATION:
@@ -143,6 +150,7 @@ class Nodes:
             stage=state["stage"],
             pending_slots=state["slots"].missing() if collecting else [],
             proposed_bed_id=state["proposed_bed_id"],
+            option_count=len(state["patient_options"]),
         )
         try:
             extraction = self._extractor.extract(state["user_message"], context)
@@ -161,20 +169,28 @@ class Nodes:
             "stage": Stage.COLLECTING,
             "slots": slots,
             "patient": state["patient"] if same_patient else None,
+            "patient_options": state["patient_options"],
         }
 
     def identify_patient(self, state: WorkflowState) -> dict:
         """Establish exactly which patient this is. A name is only a way to find an ID:
-        one match is used, none or several are reported and the user is asked."""
-        slots, patient, notice = state["slots"], state["patient"], ""
+        one match is used; none or several are reported and the user is asked to choose."""
+        slots, patient, options, notice = state["slots"], state["patient"], state["patient_options"], ""
         extraction = state["extraction"]
         try:
-            if extraction.patient_name and not extraction.patient_id:
+            if extraction.patient_id:
+                pass  # An explicit ID always wins over a name or a list position.
+            elif extraction.patient_name:
                 matches = self._find_by_name(extraction.patient_name)
                 logger.info("patient_name_lookup matches=%d", len(matches))
                 patient = matches[0] if len(matches) == 1 else None
-                slots = slots.model_copy(update={"patient_id": patient["id"] if patient else None})
+                options = matches[: messages.MAX_NAME_MATCHES_SHOWN] if len(matches) > 1 else []
                 notice = "" if patient else messages.name_matches(extraction.patient_name, matches)
+                slots = slots.model_copy(update={"patient_id": patient["id"] if patient else None})
+            elif picks_an_option(state):
+                patient = self._chosen_option(options, extraction.choice_number)
+                notice = "" if patient else messages.choice_out_of_range(options)
+                slots = slots.model_copy(update={"patient_id": patient["id"] if patient else None})
             if slots.patient_id and patient is None:
                 patient = self._api.get_patient(slots.patient_id)
         except NotFoundError:
@@ -187,7 +203,18 @@ class Nodes:
 
         if patient and patient["current_bed_id"]:
             return {**fresh_request(), "reply": messages.already_placed(patient), "outcome": Outcome.STOP}
-        return {"slots": slots, "patient": patient, "notice": notice, "outcome": Outcome.CONTINUE}
+        return {
+            "slots": slots,
+            "patient": patient,
+            "patient_options": [] if patient else options,
+            "notice": notice,
+            "outcome": Outcome.CONTINUE,
+        }
+
+    @staticmethod
+    def _chosen_option(options: list[dict], choice_number: int) -> dict | None:
+        """Map a list position to the patient shown at that position, or None if it is out of range."""
+        return options[choice_number - 1] if 1 <= choice_number <= len(options) else None
 
     def _find_by_name(self, name: str) -> list[dict]:
         cleaned = name.strip()

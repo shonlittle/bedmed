@@ -305,7 +305,8 @@ def test_ambiguous_name_lists_the_matches_and_asks_instead_of_choosing(chat: Cha
     turn = chat.send(Intent.REQUEST_BED, patient_name="Alvarez", **MEDICAL)
 
     assert turn.path == ["interpret", "collect", "identify_patient", "ask_missing"]
-    assert "More than one patient matches 'Alvarez': Maria Alvarez (P-1001), Elena Alvarez (P-1005)." in turn.reply
+    assert "More than one patient matches 'Alvarez'. You can answer with a number:" in turn.reply
+    assert "1. Maria Alvarez (P-1001)\n2. Elena Alvarez (P-1005)" in turn.reply
     assert "Which patient is this for?" in turn.reply
     assert chat.state["slots"].patient_id is None
 
@@ -418,3 +419,56 @@ def test_backend_down_during_a_list_is_reported(client: TestClient):
     chat = Chat(unreachable_api())
     assert "can't reach the hospital system" in chat.send(Intent.LIST_BEDS).reply
     assert "can't reach the hospital system" in chat.send(Intent.LIST_PATIENTS).reply
+
+
+def test_patient_can_be_picked_by_position_from_the_list_shown(chat: Chat):
+    chat.send(Intent.REQUEST_BED, patient_name="Alvarez", **MEDICAL)
+    assert [patient["id"] for patient in chat.state["patient_options"]] == ["P-1001", "P-1005"]
+
+    turn = chat.send(Intent.PROVIDE_INFO, choice_number=2)
+
+    assert turn.path == ["interpret", "collect", "identify_patient", "search_beds", "propose"]
+    assert "eligible for Elena Alvarez (P-1005)" in turn.reply
+    assert chat.state["patient_options"] == []
+
+
+def test_extractor_is_told_a_numbered_list_was_shown(chat: Chat):
+    chat.send(Intent.REQUEST_BED, patient_name="Alvarez", **MEDICAL)
+    chat.send(Intent.UNKNOWN)
+
+    first, second = chat.extractor.contexts
+    assert first.option_count == 0
+    assert second.option_count == 2
+    assert second.pending_slots == ["patient_id"]
+
+
+@pytest.mark.parametrize("choice_number", [0, 3, -1])
+def test_position_outside_the_list_is_rejected_and_the_list_is_shown_again(chat: Chat, choice_number: int):
+    chat.send(Intent.REQUEST_BED, patient_name="Alvarez", **MEDICAL)
+
+    turn = chat.send(Intent.PROVIDE_INFO, choice_number=choice_number)
+
+    assert turn.path[-1] == "ask_missing"
+    assert "Please choose a number from 1 to 2:\n1. Maria Alvarez (P-1001)\n2. Elena Alvarez (P-1005)" in turn.reply
+    assert chat.state["slots"].patient_id is None
+    assert len(chat.state["patient_options"]) == 2
+
+
+def test_position_is_ignored_when_no_list_was_shown(chat: Chat):
+    turn = chat.send(Intent.PROVIDE_INFO, choice_number=1)
+    assert turn.path == ["interpret", "fallback"]
+
+
+def test_list_of_options_survives_an_unrelated_answer(chat: Chat):
+    chat.send(Intent.REQUEST_BED, patient_name="Alvarez", ward_type="MEDICAL")
+    chat.send(Intent.PROVIDE_INFO, isolation_required=False, monitoring_required=False, requires_private_room=False)
+
+    turn = chat.send(Intent.PROVIDE_INFO, choice_number=1)
+    assert "eligible for Maria Alvarez (P-1001)" in turn.reply
+
+
+def test_explicit_id_wins_over_a_list_position(chat: Chat):
+    chat.send(Intent.REQUEST_BED, patient_name="Alvarez", **MEDICAL)
+    turn = chat.send(Intent.PROVIDE_INFO, patient_id="P-1002", choice_number=1)
+    assert "eligible for James Okafor (P-1002)" in turn.reply
+    assert chat.state["patient_options"] == []

@@ -24,6 +24,7 @@ class ExtractionContext:
     stage: str
     pending_slots: list[str]
     proposed_bed_id: str | None
+    option_count: int = 0
 
 
 class Extractor(Protocol):
@@ -38,7 +39,9 @@ class LLMExtractor:
         self._model = model
 
     def extract(self, message: str, context: ExtractionContext) -> Extraction:
-        messages = build_extraction_messages(message, context.stage, context.pending_slots, context.proposed_bed_id)
+        messages = build_extraction_messages(
+            message, context.stage, context.pending_slots, context.proposed_bed_id, context.option_count
+        )
         try:
             completion = self._client.chat.completions.parse(
                 model=self._model,

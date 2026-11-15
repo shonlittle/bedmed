@@ -179,10 +179,18 @@ def name_matches(name: str, matches: list[dict]) -> str:
     """Zero or several patients matched a name. The assistant never picks one itself."""
     if not matches:
         return f"I couldn't find a patient named '{name}'."
-    shown = ", ".join(describe_patient(patient) for patient in matches[:MAX_NAME_MATCHES_SHOWN])
     more = len(matches) - MAX_NAME_MATCHES_SHOWN
-    suffix = f", and {more} more" if more > 0 else ""
-    return f"More than one patient matches '{name}': {shown}{suffix}."
+    suffix = f"\n...and {more} more. Please be more specific or give the patient ID." if more > 0 else ""
+    shown = numbered_patients(matches[:MAX_NAME_MATCHES_SHOWN])
+    return f"More than one patient matches '{name}'. You can answer with a number:\n{shown}{suffix}"
+
+
+def numbered_patients(patients: list[dict]) -> str:
+    return "\n".join(f"{number}. {describe_patient(patient)}" for number, patient in enumerate(patients, start=1))
+
+
+def choice_out_of_range(options: list[dict]) -> str:
+    return f"Please choose a number from 1 to {len(options)}:\n{numbered_patients(options)}"
 
 
 def patient_statuses(patients: list[dict]) -> str:

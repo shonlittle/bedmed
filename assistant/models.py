@@ -80,6 +80,9 @@ class Extraction(Slots):
     patient_name: str | None = Field(
         default=None, description="Patient name as written. Used only to look up the patient ID."
     )
+    choice_number: int | None = Field(
+        default=None, description="Position picked from a numbered list the assistant showed, counting from 1."
+    )
     has_bed: bool | None = Field(default=None, description="LIST_PATIENTS filter: with a bed, without, or all.")
     bed_status: BedStatus | None = Field(default=None, description="LIST_BEDS filter: only beds in this status.")
 

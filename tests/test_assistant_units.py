@@ -50,6 +50,9 @@ def test_context_description_tells_the_model_what_was_asked():
         "collecting details; pending: isolation_required."
     )
     assert describe_context("AWAITING_CONFIRMATION", [], "4M-101") == "bed 4M-101 is awaiting confirmation."
+    assert describe_context("COLLECTING", ["patient_id"], None, option_count=2) == (
+        "collecting details; pending: patient_id. The user was shown a numbered list of 2 patients to choose from."
+    )
 
 
 def test_user_message_is_fenced_as_data_in_the_prompt():
