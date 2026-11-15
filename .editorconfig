@@ -1,7 +1,5 @@
-"""
-© 2026 Shon Little
-Created: 2026-11-15
-"""
+# © 2026 Shon Little
+# Created: 2026-11-15
 
 # Normalizes editor configuration.
 # http://editorconfig.org
@@ -20,7 +18,7 @@ indent_style = space
 indent_size = 2
 
 # Markdown files
-[*.{md,markdonw}]
+[*.{md,markdown}]
 trim_trailing_whitespace = false
 
 # Minified JavaScript files
