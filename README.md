@@ -11,7 +11,7 @@ All patient data is fictional. This is a prototype: it does not process real hea
 | Part | State |
 | --- | --- |
 | Backend API (FastAPI + PostgreSQL) | Working |
-| Conversational assistant (LangGraph) | Not started |
+| Conversational assistant (LangGraph) | Working |
 | Policy retrieval (RAG) | Not started |
 | Design and scalability notes | Not started |
 
@@ -37,13 +37,38 @@ To reset the database to the seed data:
 docker compose run --rm api python -m api.seed
 ```
 
+## Chat with the assistant
+
+Put an [OpenRouter](https://openrouter.ai) key in `.env` as `OPENROUTER_API_KEY`, then:
+
+```bash
+docker compose run --rm assistant
+```
+
+Add `--trace` to see which workflow nodes ran and what each tool call did:
+
+```bash
+docker compose run --rm assistant python -m assistant --trace
+```
+
+Things to try (reset the database between runs):
+
+| Say | What happens |
+| --- | --- |
+| "I need a bed for patient 1001" then "medical floor, nothing special" | Asks for the missing details, proposes `4M-102B`, and explains why the free bed `4M-103B` is not eligible |
+| "yes" | Assigns the bed and reports the API's confirmation |
+| "ICU bed for P-1003, on a monitor, no isolation, can share" | No eligible bed, so it escalates and says nothing was assigned |
+| "tele bed for P-1002, on a monitor, no isolation, can share", then "actually he needs contact precautions" | The changed need discards the proposal and searches again |
+
+The default model is `anthropic/claude-haiku-5.5`. Set `BEDMED_MODEL` in `.env` to use any other OpenRouter model that supports structured outputs.
+
 ## Test it
 
 ```bash
 docker compose run --rm api pytest
 ```
 
-Tests run against a separate `bedmed_test` database in the same PostgreSQL container, so the race-condition test uses real row locks.
+Tests run against a separate `bedmed_test` database in the same PostgreSQL container, so the race-condition test uses real row locks. The workflow tests replace the LLM with a scripted extractor and use the real API, so the suite needs no API key.
 
 Lint:
 
@@ -69,3 +94,21 @@ Two ideas shape it:
 - **A search result can go stale.** [api/placement.py](api/placement.py) locks the room's beds and re-evaluates eligibility before writing an assignment, so a bed taken between search and assignment produces a `409`, never a double booking.
 
 The seed data in [api/seed.py](api/seed.py) is built around demo scenarios: a clean match, a free bed rejected by room-sharing policy, a conflict with a fallback bed, and a full ICU that forces escalation.
+
+## Assistant
+
+The assistant is a LangGraph state machine in [assistant/workflow.py](assistant/workflow.py). The graph runs once per message, and conversation state persists between messages.
+
+| Step | Done by | Where |
+| --- | --- | --- |
+| Understand the message: intent and details | LLM, schema-constrained output | [assistant/extractor.py](assistant/extractor.py), [assistant/prompts.py](assistant/prompts.py) |
+| Decide what to do next | Code: routing functions over explicit state | [assistant/workflow.py](assistant/workflow.py) |
+| Read or change hospital state | Tools that call the API | [assistant/tools.py](assistant/tools.py) |
+| Decide eligibility, confirm assignments | The API | [api/](api/) |
+| Word the reply | Templates filled from API data | [assistant/messages.py](assistant/messages.py) |
+
+The LLM is called in exactly one node. It cannot choose a bed, call a tool, or write a reply, so it cannot claim an assignment that did not happen. The assistant has no database access.
+
+**Intents:** request a bed, provide information, confirm, decline, patient status, cancel, unknown.
+
+**Entities:** patient ID, ward type, isolation, cardiac monitoring, private room. An unstated detail stays unknown and is asked for; it is never assumed to be "no".

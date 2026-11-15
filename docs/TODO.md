@@ -26,14 +26,14 @@ Implementation plan. Check items off as they are completed.
 
 ## 2. Assistant
 
-- [ ] Pydantic models for intent and extracted entities
-- [ ] Prompts in their own module
-- [ ] LLM extraction with structured output via OpenRouter
-- [ ] API tools: thin HTTP clients, no database access
-- [ ] LangGraph workflow: extract → clarify missing slots → look up patient → find eligible beds → propose → confirm → assign → retry on `409` → escalate
-- [ ] CLI chat loop
-- [ ] Structured logging of workflow events
-- [ ] Workflow tests using a fake extractor (no API key needed)
+- [x] Pydantic models for intent and extracted entities
+- [x] Prompts in their own module
+- [x] LLM extraction with structured output via OpenRouter
+- [x] API tools: thin HTTP clients, no database access
+- [x] LangGraph workflow: extract → clarify missing slots → look up patient → find eligible beds → propose → confirm → assign → retry on `409` → escalate
+- [x] CLI chat loop
+- [x] Structured logging of workflow events
+- [x] Workflow tests using a fake extractor (no API key needed)
 
 ## 3. Policy RAG (bonus; drop first if time is short)
 
