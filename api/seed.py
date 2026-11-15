@@ -5,6 +5,7 @@ Scenarios (patient -> request -> expected outcome):
 - P-1002, telemetry with monitoring: 5T-203A is preferred, 5T-201 is the fallback after a conflict.
 - P-1003, ICU: every ICU bed is occupied or being cleaned, so the request escalates.
 - P-1004, sex unknown: shared rooms with a roommate need human review; empty or private rooms are fine.
+- P-1005 shares a surname with P-1001, so a search for "Alvarez" is ambiguous and must be clarified.
 - Any patient, surgical: beds are free but the ward is closed.
 - Any patient, medical with monitoring: no monitoring-capable medical bed exists.
 
@@ -78,6 +79,7 @@ PATIENTS = [
     ("P-1002", "James Okafor", Sex.MALE),
     ("P-1003", "Priya Nair", Sex.FEMALE),
     ("P-1004", "Sam Rivera", Sex.UNKNOWN),
+    ("P-1005", "Elena Alvarez", Sex.FEMALE),
     # Already placed.
     ("P-2001", "Helen Brooks", Sex.FEMALE),
     ("P-2002", "Daniel Kim", Sex.MALE),

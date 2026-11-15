@@ -73,7 +73,7 @@ def current_bed(client: TestClient, patient_id: str) -> str | None:
 def test_happy_path_proposes_then_assigns_after_confirmation(chat: Chat, client: TestClient):
     turn = chat.send(Intent.REQUEST_BED, patient_id="P-1001", **MEDICAL)
 
-    assert turn.path == ["interpret", "collect", "verify_patient", "search_beds", "propose"]
+    assert turn.path == ["interpret", "collect", "identify_patient", "search_beds", "propose"]
     assert "Bed 4M-102B is eligible for Maria Alvarez (P-1001)" in turn.reply
     assert "Free but not eligible: 4M-103B (not allowed by the room-sharing policy)" in turn.reply
     assert chat.state["stage"] is Stage.AWAITING_CONFIRMATION
@@ -91,7 +91,7 @@ def test_happy_path_proposes_then_assigns_after_confirmation(chat: Chat, client:
 def test_missing_details_are_asked_for_before_any_search(chat: Chat):
     turn = chat.send(Intent.REQUEST_BED, patient_id="P-1001", ward_type="MEDICAL")
 
-    assert turn.path == ["interpret", "collect", "verify_patient", "ask_missing"]
+    assert turn.path == ["interpret", "collect", "identify_patient", "ask_missing"]
     assert "Do they need isolation?" in turn.reply
     assert "Do they need cardiac monitoring?" in turn.reply
     assert "Do they need a private room?" in turn.reply
@@ -115,7 +115,7 @@ def test_extractor_is_told_which_details_are_pending(chat: Chat):
 
 def test_request_without_details_asks_for_everything(chat: Chat):
     turn = chat.send(Intent.REQUEST_BED)
-    assert turn.path == ["interpret", "collect", "verify_patient", "ask_missing"]
+    assert turn.path == ["interpret", "collect", "identify_patient", "ask_missing"]
     assert "Which patient is this for?" in turn.reply
 
 
@@ -132,7 +132,7 @@ def test_unknown_patient_is_reported_and_asked_for_again(chat: Chat):
 
 def test_patient_who_already_has_a_bed_is_not_reassigned(chat: Chat):
     turn = chat.send(Intent.REQUEST_BED, patient_id="P-2001", **MEDICAL)
-    assert turn.path == ["interpret", "collect", "verify_patient"]
+    assert turn.path == ["interpret", "collect", "identify_patient"]
     assert "already in bed 4M-102A" in turn.reply
     assert chat.state["stage"] is Stage.IDLE
 
@@ -140,7 +140,7 @@ def test_patient_who_already_has_a_bed_is_not_reassigned(chat: Chat):
 def test_no_eligible_bed_escalates_without_assigning(chat: Chat, client: TestClient):
     turn = chat.send(Intent.REQUEST_BED, patient_id="P-1003", **ICU)
 
-    assert turn.path == ["interpret", "collect", "verify_patient", "search_beds", "escalate"]
+    assert turn.path == ["interpret", "collect", "identify_patient", "search_beds", "escalate"]
     assert "No bed has been assigned for Priya Nair (P-1003)" in turn.reply
     assert "escalation #" in turn.reply
     assert "occupied x2, being cleaned x1" in turn.reply
@@ -201,7 +201,7 @@ def test_changed_requirement_discards_the_proposal_and_searches_again(chat: Chat
 
     turn = chat.send(Intent.PROVIDE_INFO, isolation_required=True)
 
-    assert turn.path == ["interpret", "collect", "verify_patient", "search_beds", "propose"]
+    assert turn.path == ["interpret", "collect", "identify_patient", "search_beds", "propose"]
     assert "Shall I assign 4M-101?" in turn.reply
     assert current_bed(client, "P-1001") is None
 
@@ -267,7 +267,7 @@ def test_llm_failure_changes_nothing(chat: Chat, client: TestClient):
 def test_backend_down_during_search_is_reported_and_retryable(client: TestClient):
     chat = Chat(unreachable_api())
     turn = chat.send(Intent.REQUEST_BED, patient_id="P-1001", **MEDICAL)
-    assert turn.path == ["interpret", "collect", "verify_patient"]
+    assert turn.path == ["interpret", "collect", "identify_patient"]
     assert "can't reach the hospital system" in turn.reply
     assert "nothing has been assigned" in turn.reply
 
@@ -291,3 +291,130 @@ def test_backend_failure_during_assignment_never_claims_success(client: TestClie
     assert "Confirmed" not in turn.reply
     assert chat.state["stage"] is Stage.AWAITING_CONFIRMATION
     assert current_bed(client, "P-1001") is None
+
+
+def test_patient_can_be_identified_by_a_unique_name(chat: Chat):
+    turn = chat.send(Intent.REQUEST_BED, patient_name="Maria Alvarez", **MEDICAL)
+
+    assert turn.path == ["interpret", "collect", "identify_patient", "search_beds", "propose"]
+    assert "Bed 4M-102B is eligible for Maria Alvarez (P-1001)" in turn.reply
+    assert chat.state["slots"].patient_id == "P-1001"
+
+
+def test_ambiguous_name_lists_the_matches_and_asks_instead_of_choosing(chat: Chat, client: TestClient):
+    turn = chat.send(Intent.REQUEST_BED, patient_name="Alvarez", **MEDICAL)
+
+    assert turn.path == ["interpret", "collect", "identify_patient", "ask_missing"]
+    assert "More than one patient matches 'Alvarez': Maria Alvarez (P-1001), Elena Alvarez (P-1005)." in turn.reply
+    assert "Which patient is this for?" in turn.reply
+    assert chat.state["slots"].patient_id is None
+
+    turn = chat.send(Intent.PROVIDE_INFO, patient_id="P-1005")
+    assert "eligible for Elena Alvarez (P-1005)" in turn.reply
+    assert current_bed(client, "P-1005") is None
+
+
+def test_unknown_name_is_reported_and_asked_for_again(chat: Chat):
+    turn = chat.send(Intent.REQUEST_BED, patient_name="Nobody Here", **MEDICAL)
+    assert turn.path[-1] == "ask_missing"
+    assert "I couldn't find a patient named 'Nobody Here'." in turn.reply
+
+
+def test_single_letter_name_is_not_searched(chat: Chat):
+    turn = chat.send(Intent.REQUEST_BED, patient_name="a", **MEDICAL)
+    assert "I couldn't find a patient named 'a'." in turn.reply
+
+
+def test_id_wins_when_a_message_gives_both_id_and_name(chat: Chat):
+    turn = chat.send(Intent.REQUEST_BED, patient_id="P-1002", patient_name="Alvarez", **MEDICAL)
+    assert "eligible for James Okafor (P-1002)" in turn.reply
+
+
+def test_naming_a_different_patient_replaces_the_one_in_progress(chat: Chat):
+    chat.send(Intent.REQUEST_BED, patient_id="P-1001", **MEDICAL)
+    turn = chat.send(Intent.PROVIDE_INFO, patient_name="James Okafor")
+    assert turn.path[-1] == "propose"
+    assert "eligible for James Okafor (P-1002)" in turn.reply
+    assert chat.state["slots"].patient_id == "P-1002"
+
+
+def test_named_patient_who_already_has_a_bed_is_not_reassigned(chat: Chat):
+    turn = chat.send(Intent.REQUEST_BED, patient_name="Helen Brooks", **MEDICAL)
+    assert "Helen Brooks (P-2001) is already in bed 4M-102A" in turn.reply
+
+
+def test_patient_status_by_name_reports_every_match(chat: Chat):
+    turn = chat.send(Intent.PATIENT_STATUS, patient_name="Helen Brooks")
+    assert turn.reply == "Helen Brooks (P-2001) is in bed 4M-102A."
+
+    turn = chat.send(Intent.PATIENT_STATUS, patient_name="Alvarez")
+    assert turn.reply == (
+        "Maria Alvarez (P-1001) does not have a bed assigned.\nElena Alvarez (P-1005) does not have a bed assigned."
+    )
+
+    turn = chat.send(Intent.PATIENT_STATUS, patient_name="Nobody Here")
+    assert turn.reply == "I couldn't find a patient named 'Nobody Here'."
+
+
+def test_patient_status_without_a_patient_asks_who(chat: Chat):
+    turn = chat.send(Intent.PATIENT_STATUS)
+    assert "Which patient?" in turn.reply
+
+
+def test_list_patients_with_and_without_beds(chat: Chat):
+    turn = chat.send(Intent.LIST_PATIENTS)
+    assert turn.path == ["interpret", "list_patients"]
+    assert turn.reply.startswith("Patients (9):")
+
+    turn = chat.send(Intent.LIST_PATIENTS, has_bed=True)
+    assert turn.reply.startswith("Patients with a bed (4):")
+    assert "- Helen Brooks (P-2001): bed 4M-102A" in turn.reply
+
+    turn = chat.send(Intent.LIST_PATIENTS, has_bed=False)
+    assert turn.reply.startswith("Patients waiting for a bed (5):")
+    assert "- Maria Alvarez (P-1001): no bed" in turn.reply
+    assert "Helen Brooks" not in turn.reply
+
+
+def test_list_beds_by_status(chat: Chat):
+    turn = chat.send(Intent.LIST_BEDS)
+    assert turn.path == ["interpret", "list_beds"]
+    assert turn.reply.startswith("Beds (16):")
+    assert "Available means free" not in turn.reply
+
+    turn = chat.send(Intent.LIST_BEDS, bed_status="OCCUPIED")
+    assert turn.reply.startswith("Beds occupied (4):")
+    assert "- 4M-102A (4 Medical, shared): occupied by Helen Brooks (P-2001)" in turn.reply
+
+    turn = chat.send(Intent.LIST_BEDS, bed_status="RESERVED")
+    assert turn.reply == "Beds reserved (1):\n- 5T-202 (5 Telemetry, private, monitoring): reserved"
+
+
+def test_available_bed_list_warns_that_available_is_not_eligible(chat: Chat):
+    turn = chat.send(Intent.LIST_BEDS, bed_status="AVAILABLE")
+    assert turn.reply.startswith("Beds available (8):")
+    assert "- 5T-201 (5 Telemetry, private, isolation, monitoring): available" in turn.reply
+    assert turn.reply.endswith("so ask me to find a bed for them.")
+
+
+def test_empty_list_says_none(chat: Chat, client: TestClient):
+    client.patch("/beds/5T-202/status", json={"status": "AVAILABLE"})
+    assert chat.send(Intent.LIST_BEDS, bed_status="RESERVED").reply == "Beds reserved: none."
+
+
+def test_lists_do_not_disturb_a_pending_proposal(chat: Chat, client: TestClient):
+    chat.send(Intent.REQUEST_BED, patient_id="P-1001", **MEDICAL)
+
+    chat.send(Intent.LIST_BEDS, bed_status="AVAILABLE")
+    chat.send(Intent.LIST_PATIENTS, has_bed=False)
+    assert chat.state["stage"] is Stage.AWAITING_CONFIRMATION
+    assert chat.state["proposed_bed_id"] == "4M-102B"
+
+    assert "Confirmed by the hospital system" in chat.send(Intent.CONFIRM).reply
+    assert current_bed(client, "P-1001") == "4M-102B"
+
+
+def test_backend_down_during_a_list_is_reported(client: TestClient):
+    chat = Chat(unreachable_api())
+    assert "can't reach the hospital system" in chat.send(Intent.LIST_BEDS).reply
+    assert "can't reach the hospital system" in chat.send(Intent.LIST_PATIENTS).reply

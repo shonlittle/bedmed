@@ -4,7 +4,7 @@ so the assistant cannot claim an action the backend did not confirm."""
 from assistant.models import Slots
 
 SLOT_QUESTIONS = {
-    "patient_id": "Which patient is this for? Please give the patient ID, for example P-1001.",
+    "patient_id": "Which patient is this for? Please give a patient ID (for example P-1001) or a name.",
     "ward_type": "What type of ward do they need: medical, telemetry, ICU or surgical?",
     "isolation_required": "Do they need isolation?",
     "monitoring_required": "Do they need cardiac monitoring?",
@@ -32,9 +32,9 @@ BACKEND_UNAVAILABLE = (
     "I can't reach the hospital system right now, so nothing has been assigned. Say 'try again' to retry."
 )
 CANCELLED = "Cancelled. No bed has been assigned."
-STATUS_NEEDS_PATIENT = "Which patient? Please give the patient ID, for example P-1001."
+STATUS_NEEDS_PATIENT = "Which patient? Please give a patient ID (for example P-1001) or a name."
 HELP = (
-    "I can find and assign a bed for a patient, or tell you where a patient is. "
+    "I can find and assign a bed for a patient, tell you where a patient is, or list patients and beds. "
     "For example: 'I need a telemetry bed for P-1002'."
 )
 
@@ -159,3 +159,66 @@ def fallback(proposed_bed_id: str | None, missing: list[str], collecting: bool) 
     if collecting and missing:
         return join("Sorry, I didn't understand that.", ask_for_missing(missing))
     return join("Sorry, I didn't understand that.", HELP)
+
+
+MAX_NAME_MATCHES_SHOWN = 5
+AVAILABLE_IS_NOT_ELIGIBLE = (
+    "Available means free. Whether a bed suits a particular patient depends on their needs, "
+    "so ask me to find a bed for them."
+)
+BED_STATUS_TEXT = {
+    "AVAILABLE": "available",
+    "OCCUPIED": "occupied",
+    "CLEANING": "being cleaned",
+    "RESERVED": "reserved",
+    "OUT_OF_SERVICE": "out of service",
+}
+
+
+def name_matches(name: str, matches: list[dict]) -> str:
+    """Zero or several patients matched a name. The assistant never picks one itself."""
+    if not matches:
+        return f"I couldn't find a patient named '{name}'."
+    shown = ", ".join(describe_patient(patient) for patient in matches[:MAX_NAME_MATCHES_SHOWN])
+    more = len(matches) - MAX_NAME_MATCHES_SHOWN
+    suffix = f", and {more} more" if more > 0 else ""
+    return f"More than one patient matches '{name}': {shown}{suffix}."
+
+
+def patient_statuses(patients: list[dict]) -> str:
+    return "\n".join(patient_status(patient) for patient in patients[:MAX_NAME_MATCHES_SHOWN])
+
+
+def patient_list(patients: list[dict], has_bed: bool | None) -> str:
+    title = {None: "Patients", True: "Patients with a bed", False: "Patients waiting for a bed"}[has_bed]
+    if not patients:
+        return f"{title}: none."
+    lines = [f"- {describe_patient(patient)}: {describe_placement(patient)}" for patient in patients]
+    return "\n".join([f"{title} ({len(patients)}):", *lines])
+
+
+def describe_placement(patient: dict) -> str:
+    return f"bed {patient['current_bed_id']}" if patient["current_bed_id"] else "no bed"
+
+
+def describe_bed(bed: dict) -> str:
+    room = "private" if bed["room_type"] == "PRIVATE" else "shared"
+    features = [
+        label
+        for label, present in [("isolation", bed["isolation_capable"]), ("monitoring", bed["monitoring_capable"])]
+        if present
+    ]
+    status = BED_STATUS_TEXT.get(bed["status"], bed["status"])
+    if bed["patient_id"]:
+        status = f"{status} by {bed['patient_name']} ({bed['patient_id']})"
+    return f"- {bed['id']} ({', '.join([bed['ward_name'], room, *features])}): {status}"
+
+
+def bed_list(beds: list[dict], status: str | None) -> str:
+    title = f"Beds {BED_STATUS_TEXT.get(status, status)}" if status else "Beds"
+    if not beds:
+        return f"{title}: none."
+    lines = [f"{title} ({len(beds)}):", *(describe_bed(bed) for bed in beds)]
+    if status == "AVAILABLE":
+        lines.append(AVAILABLE_IS_NOT_ELIGIBLE)
+    return "\n".join(lines)

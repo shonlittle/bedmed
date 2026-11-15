@@ -16,6 +16,8 @@ class Intent(StrEnum):
     CONFIRM = "CONFIRM"
     DECLINE = "DECLINE"
     PATIENT_STATUS = "PATIENT_STATUS"
+    LIST_PATIENTS = "LIST_PATIENTS"
+    LIST_BEDS = "LIST_BEDS"
     CANCEL = "CANCEL"
     UNKNOWN = "UNKNOWN"
 
@@ -25,6 +27,14 @@ class WardType(StrEnum):
     TELEMETRY = "TELEMETRY"
     ICU = "ICU"
     SURGICAL = "SURGICAL"
+
+
+class BedStatus(StrEnum):
+    AVAILABLE = "AVAILABLE"
+    OCCUPIED = "OCCUPIED"
+    CLEANING = "CLEANING"
+    RESERVED = "RESERVED"
+    OUT_OF_SERVICE = "OUT_OF_SERVICE"
 
 
 REQUIREMENT_SLOTS = ("ward_type", "isolation_required", "monitoring_required", "requires_private_room")
@@ -67,6 +77,11 @@ class Extraction(Slots):
     """One user message, interpreted."""
 
     intent: Intent = Field(description="What the user wants to do with this message.")
+    patient_name: str | None = Field(
+        default=None, description="Patient name as written. Used only to look up the patient ID."
+    )
+    has_bed: bool | None = Field(default=None, description="LIST_PATIENTS filter: with a bed, without, or all.")
+    bed_status: BedStatus | None = Field(default=None, description="LIST_BEDS filter: only beds in this status.")
 
     def slots(self) -> Slots:
         return Slots(**self.model_dump(include=set(SLOT_NAMES)))

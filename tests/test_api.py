@@ -173,3 +173,77 @@ def test_bed_with_patient_cannot_be_marked_available(client: TestClient):
 
 def test_status_update_for_unknown_bed_returns_404(client: TestClient):
     assert client.patch("/beds/9Z-999/status", json={"status": "CLEANING"}).status_code == 404
+
+
+def test_list_patients_returns_everyone_in_id_order(client: TestClient):
+    patients = client.get("/patients").json()
+    assert [patient["id"] for patient in patients] == [
+        "P-1001",
+        "P-1002",
+        "P-1003",
+        "P-1004",
+        "P-1005",
+        "P-2001",
+        "P-2002",
+        "P-2003",
+        "P-2004",
+    ]
+
+
+def test_list_patients_filters_by_whether_they_have_a_bed(client: TestClient):
+    with_bed = client.get("/patients", params={"has_bed": "true"}).json()
+    without_bed = client.get("/patients", params={"has_bed": "false"}).json()
+
+    assert [patient["id"] for patient in with_bed] == ["P-2001", "P-2002", "P-2003", "P-2004"]
+    assert all(patient["current_bed_id"] for patient in with_bed)
+    assert [patient["id"] for patient in without_bed] == ["P-1001", "P-1002", "P-1003", "P-1004", "P-1005"]
+
+
+def test_patient_name_search_ignores_case_and_matches_part_of_the_name(client: TestClient):
+    assert [p["id"] for p in client.get("/patients", params={"name": "maria alvarez"}).json()] == ["P-1001"]
+    assert [p["id"] for p in client.get("/patients", params={"name": "ALVAREZ"}).json()] == ["P-1001", "P-1005"]
+    assert client.get("/patients", params={"name": "nobody"}).json() == []
+
+
+def test_patient_name_search_treats_wildcards_as_plain_text(client: TestClient):
+    assert client.get("/patients", params={"name": "%%"}).json() == []
+    assert client.get("/patients", params={"name": "__"}).json() == []
+
+
+def test_patient_name_search_rejects_a_single_character(client: TestClient):
+    assert client.get("/patients", params={"name": "a"}).status_code == 422
+
+
+def test_list_beds_returns_every_bed_with_its_occupant(client: TestClient):
+    beds = {bed["id"]: bed for bed in client.get("/beds").json()}
+    assert len(beds) == 16
+    assert beds["4M-102A"]["patient_id"] == "P-2001"
+    assert beds["4M-102A"]["patient_name"] == "Helen Brooks"
+    assert beds["4M-102B"]["patient_id"] is None
+
+
+def test_list_beds_filters_by_status(client: TestClient):
+    occupied = client.get("/beds", params={"status": "OCCUPIED"}).json()
+    available = client.get("/beds", params={"status": "AVAILABLE"}).json()
+
+    assert [bed["id"] for bed in occupied] == ["2I-01", "2I-02", "4M-102A", "4M-103A"]
+    assert [bed["id"] for bed in available] == [
+        "3S-301A",
+        "3S-301B",
+        "4M-101",
+        "4M-102B",
+        "4M-103B",
+        "4M-104B",
+        "5T-201",
+        "5T-203A",
+    ]
+
+
+def test_list_beds_reflects_a_new_assignment(client: TestClient):
+    assert assign(client, "P-1001", "4M-102B", MEDICAL).status_code == 201
+    occupied = {bed["id"]: bed for bed in client.get("/beds", params={"status": "OCCUPIED"}).json()}
+    assert occupied["4M-102B"]["patient_id"] == "P-1001"
+
+
+def test_list_beds_rejects_an_unknown_status(client: TestClient):
+    assert client.get("/beds", params={"status": "BROKEN"}).status_code == 422

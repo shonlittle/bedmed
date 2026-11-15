@@ -1,13 +1,15 @@
 """HTTP endpoints. Routes translate between HTTP and the placement service; rules live in the service."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from api import placement
+from api import directory, placement
 from api.database import get_session
+from api.models import BedStatus
 from api.schemas import (
     AssignmentIn,
     AssignmentOut,
+    BedListItemOut,
     BedOut,
     BedSearchIn,
     BedSearchOut,
@@ -33,6 +35,24 @@ def conflict(error: placement.ConflictError) -> HTTPException:
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/patients")
+def list_patients(
+    name: str | None = Query(default=None, min_length=2, max_length=100, description="Part of the patient's name."),
+    has_bed: bool | None = Query(default=None, description="Only patients with (true) or without (false) a bed."),
+    session: Session = Depends(get_session),
+) -> list[PatientOut]:
+    return [PatientOut.from_patient(patient) for patient in directory.list_patients(session, name, has_bed)]
+
+
+@router.get("/beds")
+def list_beds(
+    bed_status: BedStatus | None = Query(default=None, alias="status", description="Only beds in this status."),
+    session: Session = Depends(get_session),
+) -> list[BedListItemOut]:
+    """Operational status only. Whether a bed suits a particular patient is answered by POST /beds/search."""
+    return [BedListItemOut.from_bed(bed) for bed in directory.list_beds(session, bed_status)]
 
 
 @router.get("/patients/{patient_id}")

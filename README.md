@@ -63,6 +63,8 @@ Things to try (reset the database between runs):
 | --- | --- |
 | "I need a bed for patient 1001" then "medical floor, nothing special" | Asks for the missing details, proposes `4M-102B`, and explains why the free bed `4M-103B` is not eligible |
 | "yes" | Assigns the bed and reports the API's confirmation |
+| "find a medical bed for Alvarez, no special needs" | Two patients match, so it lists both and asks which one |
+| "who's still waiting for a bed?", "what beds are free?", "show me the occupied beds" | Lists patients or beds without disturbing a request in progress |
 | "ICU bed for P-1003, on a monitor, no isolation, can share" | No eligible bed, so it escalates and says nothing was assigned |
 | "tele bed for P-1002, on a monitor, no isolation, can share", then "actually he needs contact precautions" | The changed need discards the proposal and searches again |
 
@@ -88,7 +90,9 @@ The API owns operational state and validates every request itself; it does not t
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /patients` | List patients; filter by part of a name or by whether they have a bed |
 | `GET /patients/{id}` | Patient lookup, including the current bed |
+| `GET /beds` | List beds with status and occupant; filter by status |
 | `POST /beds/search` | Eligible beds for a patient, best first, plus why near misses were rejected |
 | `POST /assignments` | Assign a bed; re-checks eligibility in the same transaction, `409` on conflict |
 | `POST /escalations` | Hand a placement to a human |
@@ -115,6 +119,10 @@ The assistant is a LangGraph state machine in [assistant/workflow.py](assistant/
 
 The LLM is called in exactly one node. It cannot choose a bed, call a tool, or write a reply, so it cannot claim an assignment that did not happen. The assistant has no database access.
 
-**Intents:** request a bed, provide information, confirm, decline, patient status, cancel, unknown.
+**Intents:** request a bed, provide information, confirm, decline, patient status, list patients, list beds, cancel, unknown.
 
-**Entities:** patient ID, ward type, isolation, cardiac monitoring, private room. An unstated detail stays unknown and is asked for; it is never assumed to be "no".
+**Entities:** patient ID or name, ward type, isolation, cardiac monitoring, private room, plus list filters (has a bed, bed status). An unstated detail stays unknown and is asked for; it is never assumed to be "no".
+
+**Names:** a name is only a way to find a patient ID. One match is used and shown back before anything is assigned; no match or several matches are reported and the assistant asks, never choosing for the user.
+
+**Lists:** the bed list shows operational status. An available bed is free, not necessarily eligible for a given patient, and the reply says so.

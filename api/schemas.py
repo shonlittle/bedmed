@@ -59,6 +59,22 @@ class BedOut(BaseModel):
         )
 
 
+class BedListItemOut(BedOut):
+    """A bed in a listing, with who is in it, if anyone."""
+
+    patient_id: str | None
+    patient_name: str | None
+
+    @classmethod
+    def from_bed(cls, bed: Bed) -> "BedListItemOut":
+        occupant = bed.assignment.patient if bed.assignment else None
+        return cls(
+            **BedOut.from_bed(bed).model_dump(),
+            patient_id=occupant.id if occupant else None,
+            patient_name=occupant.full_name if occupant else None,
+        )
+
+
 class BedSearchIn(BaseModel):
     patient_id: str
     requirements: PlacementRequirements

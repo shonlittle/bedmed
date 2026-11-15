@@ -32,11 +32,26 @@ class HospitalApi:
     def __init__(self, client: httpx.Client) -> None:
         self._client = client
 
+    # --- Read-only tools ---
+
     def get_patient(self, patient_id: str) -> dict:
         return self._request("GET", f"/patients/{patient_id}")
 
+    def find_patients(self, name: str) -> list[dict]:
+        return self._request("GET", "/patients", params={"name": name})
+
+    def list_patients(self, has_bed: bool | None = None) -> list[dict]:
+        params = {} if has_bed is None else {"has_bed": str(has_bed).lower()}
+        return self._request("GET", "/patients", params=params)
+
+    def list_beds(self, status: str | None = None) -> list[dict]:
+        params = {} if status is None else {"status": status}
+        return self._request("GET", "/beds", params=params)
+
     def search_beds(self, patient_id: str, requirements: dict) -> dict:
         return self._request("POST", "/beds/search", {"patient_id": patient_id, "requirements": requirements})
+
+    # --- Tools that change hospital state ---
 
     def assign_bed(self, patient_id: str, bed_id: str, requirements: dict) -> dict:
         body = {"patient_id": patient_id, "bed_id": bed_id, "requirements": requirements}
@@ -46,9 +61,9 @@ class HospitalApi:
         body = {"patient_id": patient_id, "requirements": requirements, "reason": reason}
         return self._request("POST", "/escalations", body)
 
-    def _request(self, method: str, path: str, body: dict | None = None) -> dict:
+    def _request(self, method: str, path: str, body: dict | None = None, params: dict | None = None):
         try:
-            response = self._client.request(method, path, json=body)
+            response = self._client.request(method, path, json=body, params=params)
         except httpx.HTTPError as error:
             raise BackendError(
                 "BACKEND_UNREACHABLE", f"Could not reach the hospital API: {type(error).__name__}"

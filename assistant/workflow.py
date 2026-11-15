@@ -17,10 +17,12 @@ from langgraph.graph.state import CompiledStateGraph
 
 from assistant import messages
 from assistant.extractor import ExtractionContext, ExtractionError, Extractor
-from assistant.models import Extraction, Intent, Slots, WardType
+from assistant.models import BedStatus, Extraction, Intent, Slots, WardType
 from assistant.tools import ApiError, ConflictError, HospitalApi, NotFoundError
 
 logger = logging.getLogger("bedmed.workflow")
+
+MIN_NAME_LENGTH = 2
 
 
 class Stage(StrEnum):
@@ -74,6 +76,14 @@ def next_candidate(state: WorkflowState) -> dict | None:
     return next((bed for bed in state["candidates"] if bed["id"] not in state["declined_bed_ids"]), None)
 
 
+# Lookups that answer a question without touching the request in progress.
+READ_ONLY_NODES = {
+    Intent.PATIENT_STATUS: "patient_status",
+    Intent.LIST_PATIENTS: "list_patients",
+    Intent.LIST_BEDS: "list_beds",
+}
+
+
 def changes_slots(state: WorkflowState) -> bool:
     return state["slots"].merged_with(state["extraction"].slots()) != state["slots"]
 
@@ -87,9 +97,9 @@ def route_after_interpret(state: WorkflowState) -> str:
         return END
     if extraction.intent is Intent.CANCEL:
         return "cancel"
-    if extraction.intent is Intent.PATIENT_STATUS:
-        return "patient_status"
-    if changes_slots(state):
+    if extraction.intent in READ_ONLY_NODES:
+        return READ_ONLY_NODES[extraction.intent]
+    if changes_slots(state) or extraction.patient_name:
         # New or corrected details always restart the search, even while a bed awaits confirmation.
         return "collect"
     if state["stage"] is Stage.AWAITING_CONFIRMATION:
@@ -102,7 +112,7 @@ def route_after_interpret(state: WorkflowState) -> str:
     return "fallback"
 
 
-def route_after_verify(state: WorkflowState) -> str:
+def route_after_identify(state: WorkflowState) -> str:
     if state["outcome"] is Outcome.STOP:
         return END
     return "ask_missing" if state["slots"].missing() else "search_beds"
@@ -153,25 +163,35 @@ class Nodes:
             "patient": state["patient"] if same_patient else None,
         }
 
-    def verify_patient(self, state: WorkflowState) -> dict:
-        slots = state["slots"]
-        if slots.patient_id is None or state["patient"] is not None:
-            return {"outcome": Outcome.CONTINUE}
+    def identify_patient(self, state: WorkflowState) -> dict:
+        """Establish exactly which patient this is. A name is only a way to find an ID:
+        one match is used, none or several are reported and the user is asked."""
+        slots, patient, notice = state["slots"], state["patient"], ""
+        extraction = state["extraction"]
         try:
-            patient = self._api.get_patient(slots.patient_id)
+            if extraction.patient_name and not extraction.patient_id:
+                matches = self._find_by_name(extraction.patient_name)
+                logger.info("patient_name_lookup matches=%d", len(matches))
+                patient = matches[0] if len(matches) == 1 else None
+                slots = slots.model_copy(update={"patient_id": patient["id"] if patient else None})
+                notice = "" if patient else messages.name_matches(extraction.patient_name, matches)
+            if slots.patient_id and patient is None:
+                patient = self._api.get_patient(slots.patient_id)
         except NotFoundError:
             logger.info("patient_not_found patient=%s", slots.patient_id)
-            return {
-                "slots": slots.model_copy(update={"patient_id": None}),
-                "notice": messages.patient_not_found(slots.patient_id),
-                "outcome": Outcome.CONTINUE,
-            }
+            notice = messages.patient_not_found(slots.patient_id)
+            slots = slots.model_copy(update={"patient_id": None})
         except ApiError as error:
-            logger.error("tool_failure tool=get_patient code=%s", error.code)
+            logger.error("tool_failure tool=identify_patient code=%s", error.code)
             return {"reply": messages.BACKEND_UNAVAILABLE, "outcome": Outcome.STOP}
-        if patient["current_bed_id"]:
+
+        if patient and patient["current_bed_id"]:
             return {**fresh_request(), "reply": messages.already_placed(patient), "outcome": Outcome.STOP}
-        return {"patient": patient, "outcome": Outcome.CONTINUE}
+        return {"slots": slots, "patient": patient, "notice": notice, "outcome": Outcome.CONTINUE}
+
+    def _find_by_name(self, name: str) -> list[dict]:
+        cleaned = name.strip()
+        return self._api.find_patients(cleaned) if len(cleaned) >= MIN_NAME_LENGTH else []
 
     def ask_missing(self, state: WorkflowState) -> dict:
         missing = state["slots"].missing()
@@ -250,18 +270,42 @@ class Nodes:
         return {**fresh_request(), "reply": reply}
 
     def patient_status(self, state: WorkflowState) -> dict:
-        """Read-only lookup. It does not disturb a request in progress."""
-        patient_id = state["extraction"].patient_id or state["slots"].patient_id
-        if patient_id is None:
-            return {"reply": messages.STATUS_NEEDS_PATIENT}
+        """Read-only lookup by ID or name. It does not disturb a request in progress."""
+        extraction = state["extraction"]
+        patient_id = extraction.patient_id or (None if extraction.patient_name else state["slots"].patient_id)
         try:
-            patient = self._api.get_patient(patient_id)
+            if patient_id:
+                return {"reply": messages.patient_status(self._api.get_patient(patient_id))}
+            if extraction.patient_name:
+                matches = self._find_by_name(extraction.patient_name)
+                if not matches:
+                    return {"reply": messages.name_matches(extraction.patient_name, matches)}
+                return {"reply": messages.patient_statuses(matches)}
         except NotFoundError:
             return {"reply": messages.patient_not_found(patient_id)}
         except ApiError as error:
-            logger.error("tool_failure tool=get_patient code=%s", error.code)
+            logger.error("tool_failure tool=patient_status code=%s", error.code)
             return {"reply": messages.BACKEND_UNAVAILABLE}
-        return {"reply": messages.patient_status(patient)}
+        return {"reply": messages.STATUS_NEEDS_PATIENT}
+
+    def list_patients(self, state: WorkflowState) -> dict:
+        has_bed = state["extraction"].has_bed
+        try:
+            patients = self._api.list_patients(has_bed)
+        except ApiError as error:
+            logger.error("tool_failure tool=list_patients code=%s", error.code)
+            return {"reply": messages.BACKEND_UNAVAILABLE}
+        return {"reply": messages.patient_list(patients, has_bed)}
+
+    def list_beds(self, state: WorkflowState) -> dict:
+        """Lists operational status only. Eligibility for a patient is a different question."""
+        status = state["extraction"].bed_status
+        try:
+            beds = self._api.list_beds(status)
+        except ApiError as error:
+            logger.error("tool_failure tool=list_beds code=%s", error.code)
+            return {"reply": messages.BACKEND_UNAVAILABLE}
+        return {"reply": messages.bed_list(beds, status)}
 
     def cancel(self, state: WorkflowState) -> dict:
         return {**fresh_request(), "reply": messages.CANCELLED}
@@ -281,7 +325,7 @@ def build_graph(extractor: Extractor, api: HospitalApi) -> CompiledStateGraph:
     for name in (
         "interpret",
         "collect",
-        "verify_patient",
+        "identify_patient",
         "ask_missing",
         "search_beds",
         "propose",
@@ -289,6 +333,8 @@ def build_graph(extractor: Extractor, api: HospitalApi) -> CompiledStateGraph:
         "decline",
         "escalate",
         "patient_status",
+        "list_patients",
+        "list_beds",
         "cancel",
         "fallback",
     ):
@@ -298,14 +344,14 @@ def build_graph(extractor: Extractor, api: HospitalApi) -> CompiledStateGraph:
     graph.add_conditional_edges(
         "interpret",
         route_after_interpret,
-        ["collect", "assign", "decline", "patient_status", "cancel", "fallback", END],
+        ["collect", "assign", "decline", *READ_ONLY_NODES.values(), "cancel", "fallback", END],
     )
-    graph.add_edge("collect", "verify_patient")
-    graph.add_conditional_edges("verify_patient", route_after_verify, ["ask_missing", "search_beds", END])
+    graph.add_edge("collect", "identify_patient")
+    graph.add_conditional_edges("identify_patient", route_after_identify, ["ask_missing", "search_beds", END])
     graph.add_conditional_edges("search_beds", route_to_proposal, ["propose", "escalate", END])
     graph.add_conditional_edges("assign", route_after_assign, ["search_beds", END])
     graph.add_conditional_edges("decline", route_to_proposal, ["propose", "escalate", END])
-    for terminal in ("ask_missing", "propose", "escalate", "patient_status", "cancel", "fallback"):
+    for terminal in ("ask_missing", "propose", "escalate", *READ_ONLY_NODES.values(), "cancel", "fallback"):
         graph.add_edge(terminal, END)
 
     return graph.compile(checkpointer=InMemorySaver(serde=checkpoint_serializer()))
@@ -313,7 +359,7 @@ def build_graph(extractor: Extractor, api: HospitalApi) -> CompiledStateGraph:
 
 def checkpoint_serializer() -> JsonPlusSerializer:
     """Allow only this workflow's own types to be restored from saved state."""
-    state_types = (Stage, Outcome, Slots, Extraction, Intent, WardType)
+    state_types = (Stage, Outcome, Slots, Extraction, Intent, WardType, BedStatus)
     return JsonPlusSerializer(allowed_msgpack_modules=[(cls.__module__, cls.__name__) for cls in state_types])
 
 

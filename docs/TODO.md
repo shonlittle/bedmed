@@ -35,6 +35,15 @@ Implementation plan. Check items off as they are completed.
 - [x] Structured logging of workflow events
 - [x] Workflow tests using a fake extractor (no API key needed)
 
+## 2a. Names and lists
+
+- [x] API: `GET /patients` (name and has-bed filters) and `GET /beds` (status filter)
+- [x] Identify a patient by name; ask when no patient or several patients match
+- [x] Patient status by name
+- [x] List patients (all, with a bed, without a bed) and beds (all, by status)
+- [x] Seed patient sharing a surname, to demonstrate an ambiguous name
+- [x] Tests for the endpoints, name lookup and lists
+
 ## 3. Policy RAG (bonus; drop first if time is short)
 
 - [ ] Fictional policy documents in `policies/`
