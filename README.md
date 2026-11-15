@@ -12,6 +12,7 @@ All patient data is fictional. This is a prototype: it does not process real hea
 | --- | --- |
 | Backend API (FastAPI + PostgreSQL) | Working |
 | Conversational assistant (LangGraph) | Working |
+| Web UI (chat, bed board, workflow, logs) | Working |
 | Policy retrieval (RAG) | Not started |
 | Design and scalability notes | Not started |
 
@@ -29,7 +30,13 @@ cp .env.example .env
 make up
 ```
 
-The API is at <http://localhost:8000>, with interactive docs at <http://localhost:8000/docs>. The database is seeded with fictional data on first start.
+This starts three services and seeds the database with fictional data on first start:
+
+| Service | Address |
+| --- | --- |
+| Web UI | <http://localhost:8080> |
+| Hospital API, with interactive docs | <http://localhost:8000/docs> |
+| PostgreSQL | internal to Docker only |
 
 To reset the database to the seed data:
 
@@ -43,9 +50,24 @@ To stop everything:
 make down
 ```
 
-## Chat with the assistant
+## Use the web UI
 
-Put an [OpenRouter](https://openrouter.ai) key in `.env` as `OPENROUTER_API_KEY`, then:
+Put an [OpenRouter](https://openrouter.ai) key in `.env` as `OPENROUTER_API_KEY`, run `make up`, and open <http://localhost:8080>.
+
+| Page | What it shows |
+| --- | --- |
+| Demo | The chat beside a live bed board, with waiting patients and escalations. Each reply has a trace of the workflow steps it took, marked LLM, tool or logic |
+| Workflow | The state machine, drawn from the running LangGraph definition |
+| Design, Scalability, README | The written deliverables, rendered from the Markdown files in this repository |
+| Logs | Recent workflow events |
+
+To demonstrate a conflict: ask for a bed, wait for the proposal, use the menu on that bed to mark it reserved (this plays the part of another hospital system), then say "yes". The assistant reports the conflict and proposes the next bed.
+
+"Reset demo data" restores the seed data and clears the conversation. The UI is a local demonstration and has no login.
+
+## Chat in the terminal
+
+The same assistant is available without the UI:
 
 ```bash
 make chat

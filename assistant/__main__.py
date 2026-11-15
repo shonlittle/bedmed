@@ -29,8 +29,9 @@ def main() -> int:
     if args.trace:
         logging.getLogger("bedmed").setLevel(logging.INFO)
 
+    settings = load_settings()
     try:
-        settings = load_settings()
+        settings.require_llm_key()
     except ConfigError as error:
         print(f"Configuration error: {error}", file=sys.stderr)
         return 1

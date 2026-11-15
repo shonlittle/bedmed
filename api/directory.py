@@ -3,7 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from api.models import Assignment, Bed, BedStatus, Patient, Room
+from api.models import Assignment, Bed, BedStatus, Escalation, Patient, Room
 
 
 def escape_like(text: str) -> str:
@@ -36,3 +36,8 @@ def list_beds(session: Session, status: BedStatus | None = None) -> list[Bed]:
     if status is not None:
         statement = statement.where(Bed.status == status)
     return list(session.scalars(statement))
+
+
+def list_escalations(session: Session) -> list[Escalation]:
+    """Escalations, newest first."""
+    return list(session.scalars(select(Escalation).order_by(Escalation.id.desc())))

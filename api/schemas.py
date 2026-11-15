@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from api.eligibility import RejectionReason
-from api.models import Bed, BedStatus, EscalationStatus, Patient, RoomType, Sex, WardType
+from api.models import Bed, BedStatus, Escalation, EscalationStatus, Patient, RoomType, Sex, WardStatus, WardType
 
 
 class PlacementRequirements(BaseModel):
@@ -62,6 +62,7 @@ class BedOut(BaseModel):
 class BedListItemOut(BedOut):
     """A bed in a listing, with who is in it, if anyone."""
 
+    ward_status: WardStatus
     patient_id: str | None
     patient_name: str | None
 
@@ -70,6 +71,7 @@ class BedListItemOut(BedOut):
         occupant = bed.assignment.patient if bed.assignment else None
         return cls(
             **BedOut.from_bed(bed).model_dump(),
+            ward_status=bed.room.ward.status,
             patient_id=occupant.id if occupant else None,
             patient_name=occupant.full_name if occupant else None,
         )
@@ -118,6 +120,17 @@ class EscalationOut(BaseModel):
     rejection_summary: dict[RejectionReason, int]
     status: EscalationStatus
     created_at: datetime
+
+    @classmethod
+    def from_escalation(cls, escalation: Escalation) -> "EscalationOut":
+        return cls(
+            id=escalation.id,
+            patient_id=escalation.patient_id,
+            reason=escalation.reason,
+            rejection_summary=escalation.rejection_summary,
+            status=escalation.status,
+            created_at=escalation.created_at,
+        )
 
 
 class BedStatusIn(BaseModel):

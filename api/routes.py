@@ -1,5 +1,7 @@
 """HTTP endpoints. Routes translate between HTTP and the placement service; rules live in the service."""
 
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -19,6 +21,7 @@ from api.schemas import (
     PatientOut,
     RejectedBedOut,
 )
+from api.seed import reset
 
 router = APIRouter()
 
@@ -101,14 +104,12 @@ def create_escalation(body: EscalationIn, session: Session = Depends(get_session
         escalation = placement.create_escalation(session, body.patient_id, body.requirements, body.reason)
     except placement.NotFoundError as error:
         raise not_found(error) from error
-    return EscalationOut(
-        id=escalation.id,
-        patient_id=escalation.patient_id,
-        reason=escalation.reason,
-        rejection_summary=escalation.rejection_summary,
-        status=escalation.status,
-        created_at=escalation.created_at,
-    )
+    return EscalationOut.from_escalation(escalation)
+
+
+@router.get("/escalations")
+def list_escalations(session: Session = Depends(get_session)) -> list[EscalationOut]:
+    return [EscalationOut.from_escalation(escalation) for escalation in directory.list_escalations(session)]
 
 
 @router.patch("/beds/{bed_id}/status")
@@ -119,3 +120,13 @@ def update_bed_status(bed_id: str, body: BedStatusIn, session: Session = Depends
         raise not_found(error) from error
     except placement.ConflictError as error:
         raise conflict(error) from error
+
+
+@router.post("/demo/reset", status_code=status.HTTP_204_NO_CONTENT)
+def reset_demo_data(session: Session = Depends(get_session)) -> None:
+    """Restore the seed data. Exists only for demonstrations and is off unless BEDMED_DEMO_MODE=1."""
+    if os.environ.get("BEDMED_DEMO_MODE") != "1":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "NOT_FOUND", "message": "Not found."})
+    engine = session.get_bind()
+    session.close()
+    reset(engine)

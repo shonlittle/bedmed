@@ -45,6 +45,18 @@ Implementation plan. Check items off as they are completed.
 - [x] Seed patient sharing a surname, to demonstrate an ambiguous name
 - [x] Tests for the endpoints, name lookup and lists
 
+## 2b. Web UI
+
+- [x] Workflow records one event per step, used for both the logs and a per-reply trace
+- [x] Assistant web server, separate from the hospital API: chat, board, workflow, documents, logs
+- [x] Demo page: chat beside a live bed board, waiting patients and escalations
+- [x] Demo controls: change a bed's status as another system would; reset to seed data
+- [x] Workflow page drawn from the running graph
+- [x] Deliverables rendered from the repository's Markdown files
+- [x] Logs page
+- [x] API: `GET /escalations`, and `POST /demo/reset` behind `BEDMED_DEMO_MODE`
+- [x] Tests for the web endpoints
+
 ## 3. Policy RAG (bonus; drop first if time is short)
 
 - [ ] Fictional policy documents in `policies/`

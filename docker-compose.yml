@@ -16,6 +16,8 @@ services:
     image: bedmed
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-bedmed}:${POSTGRES_PASSWORD:-bedmed}@db:5432/${POSTGRES_DB:-bedmed}
+      # Enables POST /demo/reset, which restores the seed data. Never set this outside a demo.
+      BEDMED_DEMO_MODE: "1"
     ports:
       - "8000:8000"
     volumes:
@@ -29,7 +31,29 @@ services:
       timeout: 3s
       retries: 15
 
-  # The chat client. It is given the API's URL and an LLM key, and no database credentials.
+  # The assistant's web UI. Like the CLI below, it is given the API's URL and an LLM key,
+  # and no database credentials.
+  web:
+    image: bedmed
+    command: ["uvicorn", "assistant.web:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080"]
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      BEDMED_MODEL: ${BEDMED_MODEL:-}
+      BEDMED_API_URL: http://api:8000
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/logs')"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # The command-line chat client.
   # Start it with: make chat
   assistant:
     image: bedmed

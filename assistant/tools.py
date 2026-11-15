@@ -48,6 +48,9 @@ class HospitalApi:
         params = {} if status is None else {"status": status}
         return self._request("GET", "/beds", params=params)
 
+    def list_escalations(self) -> list[dict]:
+        return self._request("GET", "/escalations")
+
     def search_beds(self, patient_id: str, requirements: dict) -> dict:
         return self._request("POST", "/beds/search", {"patient_id": patient_id, "requirements": requirements})
 

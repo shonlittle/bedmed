@@ -17,7 +17,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from assistant import messages
 from assistant.extractor import ExtractionContext, ExtractionError, Extractor
-from assistant.models import BedStatus, Extraction, Intent, Slots, WardType
+from assistant.models import SLOT_NAMES, BedStatus, Extraction, Intent, Slots, WardType
 from assistant.tools import ApiError, ConflictError, HospitalApi, NotFoundError
 
 logger = logging.getLogger("bedmed.workflow")
@@ -46,6 +46,7 @@ class WorkflowState(TypedDict):
     outcome: Outcome
     notice: str
     reply: str
+    event: str
     # The request in progress
     stage: Stage
     slots: Slots
@@ -138,6 +139,22 @@ def route_after_assign(state: WorkflowState) -> str:
 # --- Nodes ------------------------------------------------------------------------------------
 
 
+def record(name: str, level: int = logging.INFO, **fields: object) -> str:
+    """Log one workflow event and return it as text, so the same line serves the logs and the per-turn trace.
+    Fields are identifiers and counts only; patient names are never logged."""
+    text = " ".join([name, *(f"{key}={value}" for key, value in fields.items())])
+    logger.log(level, text)
+    return text
+
+
+def describe_extraction(extraction: Extraction) -> dict:
+    """What the LLM extracted, with the patient name withheld."""
+    stated = extraction.model_dump(mode="json", exclude_none=True, exclude={"intent"})
+    if "patient_name" in stated:
+        stated["patient_name"] = "(given)"
+    return stated
+
+
 class Nodes:
     def __init__(self, extractor: Extractor, api: HospitalApi) -> None:
         self._extractor = extractor
@@ -155,21 +172,23 @@ class Nodes:
         try:
             extraction = self._extractor.extract(state["user_message"], context)
         except ExtractionError as error:
-            logger.warning("llm_failure error=%s", error)
-            return {"extraction": None, "notice": "", "reply": messages.LLM_FAILURE}
-        logger.info("intent_detected intent=%s", extraction.intent)
-        return {"extraction": extraction, "notice": ""}
+            event = record("llm_failure", logging.WARNING, error=error)
+            return {"extraction": None, "notice": "", "reply": messages.LLM_FAILURE, "event": event}
+        event = record("intent_detected", intent=extraction.intent, **describe_extraction(extraction))
+        return {"extraction": extraction, "notice": "", "event": event}
 
     def collect(self, state: WorkflowState) -> dict:
         """Merge stated details into the slots. Any earlier search or proposal is discarded."""
         slots = state["slots"].merged_with(state["extraction"].slots())
         same_patient = slots.patient_id == state["slots"].patient_id
+        known = [name for name in SLOT_NAMES if getattr(slots, name) is not None]
         return {
             **fresh_request(),
             "stage": Stage.COLLECTING,
             "slots": slots,
             "patient": state["patient"] if same_patient else None,
             "patient_options": state["patient_options"],
+            "event": record("details_collected", known=",".join(known) or "none"),
         }
 
     def identify_patient(self, state: WorkflowState) -> dict:
@@ -177,38 +196,45 @@ class Nodes:
         one match is used; none or several are reported and the user is asked to choose."""
         slots, patient, options, notice = state["slots"], state["patient"], state["patient_options"], ""
         extraction = state["extraction"]
+        event = ""
         try:
             if extraction.patient_id:
                 pass  # An explicit ID always wins over a name or a list position.
             elif extraction.patient_name:
                 matches = self._find_by_name(extraction.patient_name)
-                logger.info("patient_name_lookup matches=%d", len(matches))
+                event = record("patient_name_lookup", matches=len(matches))
                 patient = matches[0] if len(matches) == 1 else None
                 options = matches[: messages.MAX_NAME_MATCHES_SHOWN] if len(matches) > 1 else []
                 notice = "" if patient else messages.name_matches(extraction.patient_name, matches)
                 slots = slots.model_copy(update={"patient_id": patient["id"] if patient else None})
             elif picks_an_option(state):
                 patient = self._chosen_option(options, extraction.choice_number)
+                event = record("patient_option_chosen", choice=extraction.choice_number, valid=patient is not None)
                 notice = "" if patient else messages.choice_out_of_range(options)
                 slots = slots.model_copy(update={"patient_id": patient["id"] if patient else None})
             if slots.patient_id and patient is None:
                 patient = self._api.get_patient(slots.patient_id)
         except NotFoundError:
-            logger.info("patient_not_found patient=%s", slots.patient_id)
+            event = record("patient_not_found", patient=slots.patient_id)
             notice = messages.patient_not_found(slots.patient_id)
             slots = slots.model_copy(update={"patient_id": None})
         except ApiError as error:
-            logger.error("tool_failure tool=identify_patient code=%s", error.code)
-            return {"reply": messages.BACKEND_UNAVAILABLE, "outcome": Outcome.STOP}
+            event = record("tool_failure", logging.ERROR, tool="identify_patient", code=error.code)
+            return {"reply": messages.BACKEND_UNAVAILABLE, "outcome": Outcome.STOP, "event": event}
 
         if patient and patient["current_bed_id"]:
-            return {**fresh_request(), "reply": messages.already_placed(patient), "outcome": Outcome.STOP}
+            event = record("patient_already_placed", patient=patient["id"], bed=patient["current_bed_id"])
+            reply = messages.already_placed(patient)
+            return {**fresh_request(), "reply": reply, "outcome": Outcome.STOP, "event": event}
+        if patient:
+            event = record("patient_identified", patient=patient["id"])
         return {
             "slots": slots,
             "patient": patient,
             "patient_options": [] if patient else options,
             "notice": notice,
             "outcome": Outcome.CONTINUE,
+            "event": event or record("patient_not_identified"),
         }
 
     @staticmethod
@@ -222,22 +248,30 @@ class Nodes:
 
     def ask_missing(self, state: WorkflowState) -> dict:
         missing = state["slots"].missing()
-        logger.info("slots_missing missing=%s", missing)
-        return {"reply": messages.join(state["notice"], messages.ask_for_missing(missing))}
+        return {
+            "reply": messages.join(state["notice"], messages.ask_for_missing(missing)),
+            "event": record("slots_missing", missing=",".join(missing)),
+        }
 
     def search_beds(self, state: WorkflowState) -> dict:
         slots = state["slots"]
         try:
             result = self._api.search_beds(slots.patient_id, slots.requirements())
         except ApiError as error:
-            logger.error("tool_failure tool=search_beds code=%s", error.code)
-            return {"reply": messages.join(state["notice"], messages.BACKEND_UNAVAILABLE), "outcome": Outcome.STOP}
-        logger.info("bed_search patient=%s eligible=%d", slots.patient_id, len(result["eligible"]))
+            event = record("tool_failure", logging.ERROR, tool="search_beds", code=error.code)
+            reply = messages.join(state["notice"], messages.BACKEND_UNAVAILABLE)
+            return {"reply": reply, "outcome": Outcome.STOP, "event": event}
         return {
             "candidates": result["eligible"],
             "near_misses": result["rejected"],
             "rejection_summary": result["rejection_summary"],
             "outcome": Outcome.CONTINUE,
+            "event": record(
+                "bed_search",
+                patient=slots.patient_id,
+                eligible=len(result["eligible"]),
+                rejected=len(result["rejected"]),
+            ),
         }
 
     def propose(self, state: WorkflowState) -> dict:
@@ -249,29 +283,34 @@ class Nodes:
             "stage": Stage.AWAITING_CONFIRMATION,
             "proposed_bed_id": bed["id"],
             "reply": messages.join(state["notice"], proposal),
+            "event": record("bed_proposed", bed=bed["id"], awaiting="confirmation"),
         }
 
     def assign(self, state: WorkflowState) -> dict:
         """Attempt the assignment. Only a success response from the API counts as assigned."""
         slots, bed_id = state["slots"], state["proposed_bed_id"]
-        logger.info("assignment_attempted patient=%s bed=%s", slots.patient_id, bed_id)
+        ids = {"patient": slots.patient_id, "bed": bed_id}
+        record("assignment_attempted", **ids)
         try:
             assignment = self._api.assign_bed(slots.patient_id, bed_id, slots.requirements())
         except ConflictError as error:
-            logger.info("assignment_conflicted patient=%s bed=%s code=%s", slots.patient_id, bed_id, error.code)
+            event = record("assignment_conflicted", **ids, code=error.code, reasons=",".join(error.reasons) or "none")
             if error.code == "PATIENT_ALREADY_ASSIGNED":
-                return {**fresh_request(), "reply": messages.assignment_refused(str(error)), "outcome": Outcome.STOP}
+                reply = messages.assignment_refused(str(error))
+                return {**fresh_request(), "reply": reply, "outcome": Outcome.STOP, "event": event}
             return {
                 "stage": Stage.COLLECTING,
                 "proposed_bed_id": None,
                 "notice": messages.conflict(bed_id, error.reasons),
                 "outcome": Outcome.CONFLICT,
+                "event": event,
             }
         except ApiError as error:
-            logger.error("tool_failure tool=assign_bed code=%s", error.code)
-            return {"reply": messages.assignment_unconfirmed(bed_id), "outcome": Outcome.STOP}
-        logger.info("assignment_succeeded patient=%s bed=%s", slots.patient_id, bed_id)
-        return {**fresh_request(), "reply": messages.assigned(state["patient"], assignment), "outcome": Outcome.STOP}
+            event = record("tool_failure", logging.ERROR, tool="assign_bed", code=error.code)
+            return {"reply": messages.assignment_unconfirmed(bed_id), "outcome": Outcome.STOP, "event": event}
+        event = record("assignment_succeeded", **ids, assignment=assignment["id"])
+        reply = messages.assigned(state["patient"], assignment)
+        return {**fresh_request(), "reply": reply, "outcome": Outcome.STOP, "event": event}
 
     def decline(self, state: WorkflowState) -> dict:
         bed_id = state["proposed_bed_id"]
@@ -281,6 +320,7 @@ class Nodes:
             "declined_bed_ids": [*state["declined_bed_ids"], bed_id],
             "notice": messages.declined(bed_id),
             "outcome": Outcome.CONTINUE,
+            "event": record("bed_declined", bed=bed_id),
         }
 
     def escalate(self, state: WorkflowState) -> dict:
@@ -290,11 +330,11 @@ class Nodes:
         try:
             escalation = self._api.create_escalation(slots.patient_id, slots.requirements(), reason)
         except ApiError as error:
-            logger.error("tool_failure tool=create_escalation code=%s", error.code)
-            return {"reply": messages.join(state["notice"], messages.escalation_failed(reason))}
-        logger.info("escalation_created patient=%s escalation=%s", slots.patient_id, escalation["id"])
+            event = record("tool_failure", logging.ERROR, tool="create_escalation", code=error.code)
+            return {"reply": messages.join(state["notice"], messages.escalation_failed(reason)), "event": event}
+        event = record("escalation_created", patient=slots.patient_id, escalation=escalation["id"])
         reply = messages.join(state["notice"], messages.escalated(state["patient"], escalation, reason))
-        return {**fresh_request(), "reply": reply}
+        return {**fresh_request(), "reply": reply, "event": event}
 
     def patient_status(self, state: WorkflowState) -> dict:
         """Read-only lookup by ID or name. It does not disturb a request in progress."""
@@ -302,27 +342,31 @@ class Nodes:
         patient_id = extraction.patient_id or (None if extraction.patient_name else state["slots"].patient_id)
         try:
             if patient_id:
-                return {"reply": messages.patient_status(self._api.get_patient(patient_id))}
+                patient = self._api.get_patient(patient_id)
+                return {"reply": messages.patient_status(patient), "event": record("patient_status", matches=1)}
             if extraction.patient_name:
                 matches = self._find_by_name(extraction.patient_name)
+                event = record("patient_status", matches=len(matches))
                 if not matches:
-                    return {"reply": messages.name_matches(extraction.patient_name, matches)}
-                return {"reply": messages.patient_statuses(matches)}
+                    return {"reply": messages.name_matches(extraction.patient_name, matches), "event": event}
+                return {"reply": messages.patient_statuses(matches), "event": event}
         except NotFoundError:
-            return {"reply": messages.patient_not_found(patient_id)}
+            event = record("patient_not_found", patient=patient_id)
+            return {"reply": messages.patient_not_found(patient_id), "event": event}
         except ApiError as error:
-            logger.error("tool_failure tool=patient_status code=%s", error.code)
-            return {"reply": messages.BACKEND_UNAVAILABLE}
-        return {"reply": messages.STATUS_NEEDS_PATIENT}
+            event = record("tool_failure", logging.ERROR, tool="patient_status", code=error.code)
+            return {"reply": messages.BACKEND_UNAVAILABLE, "event": event}
+        return {"reply": messages.STATUS_NEEDS_PATIENT, "event": record("patient_status", matches=0)}
 
     def list_patients(self, state: WorkflowState) -> dict:
         has_bed = state["extraction"].has_bed
         try:
             patients = self._api.list_patients(has_bed)
         except ApiError as error:
-            logger.error("tool_failure tool=list_patients code=%s", error.code)
-            return {"reply": messages.BACKEND_UNAVAILABLE}
-        return {"reply": messages.patient_list(patients, has_bed)}
+            event = record("tool_failure", logging.ERROR, tool="list_patients", code=error.code)
+            return {"reply": messages.BACKEND_UNAVAILABLE, "event": event}
+        event = record("patients_listed", has_bed=has_bed, count=len(patients))
+        return {"reply": messages.patient_list(patients, has_bed), "event": event}
 
     def list_beds(self, state: WorkflowState) -> dict:
         """Lists operational status only. Eligibility for a patient is a different question."""
@@ -330,16 +374,18 @@ class Nodes:
         try:
             beds = self._api.list_beds(status)
         except ApiError as error:
-            logger.error("tool_failure tool=list_beds code=%s", error.code)
-            return {"reply": messages.BACKEND_UNAVAILABLE}
-        return {"reply": messages.bed_list(beds, status)}
+            event = record("tool_failure", logging.ERROR, tool="list_beds", code=error.code)
+            return {"reply": messages.BACKEND_UNAVAILABLE, "event": event}
+        event = record("beds_listed", status=status or "any", count=len(beds))
+        return {"reply": messages.bed_list(beds, status), "event": event}
 
     def cancel(self, state: WorkflowState) -> dict:
-        return {**fresh_request(), "reply": messages.CANCELLED}
+        return {**fresh_request(), "reply": messages.CANCELLED, "event": record("request_cancelled")}
 
     def fallback(self, state: WorkflowState) -> dict:
         collecting = state["stage"] is Stage.COLLECTING
-        return {"reply": messages.fallback(state["proposed_bed_id"], state["slots"].missing(), collecting)}
+        reply = messages.fallback(state["proposed_bed_id"], state["slots"].missing(), collecting)
+        return {"reply": reply, "event": record("not_understood")}
 
 
 # --- Graph ------------------------------------------------------------------------------------
@@ -393,10 +439,33 @@ def checkpoint_serializer() -> JsonPlusSerializer:
 # --- Conversation -----------------------------------------------------------------------------
 
 
+# How each node does its work, for anyone reading a trace.
+LLM_NODES = {"interpret"}
+TOOL_NODES = {"identify_patient", "search_beds", "assign", "escalate", "patient_status", "list_patients", "list_beds"}
+
+
+@dataclass(frozen=True)
+class Step:
+    """One node that ran during a turn, and the event it recorded."""
+
+    node: str
+    event: str
+
+    @property
+    def kind(self) -> str:
+        if self.node in LLM_NODES:
+            return "llm"
+        return "tool" if self.node in TOOL_NODES else "logic"
+
+
 @dataclass(frozen=True)
 class Turn:
     reply: str
-    path: list[str]
+    steps: list[Step]
+
+    @property
+    def path(self) -> list[str]:
+        return [step.node for step in self.steps]
 
 
 class Conversation:
@@ -409,10 +478,10 @@ class Conversation:
     def send(self, message: str) -> Turn:
         is_first_turn = not self._graph.get_state(self._config).values
         payload = {**(fresh_request() if is_first_turn else {}), "user_message": message}
-        path: list[str] = []
+        steps: list[Step] = []
         for update in self._graph.stream(payload, self._config, stream_mode="updates"):
-            path.extend(update)
-        return Turn(reply=self.state["reply"], path=path)
+            steps.extend(Step(node, changes["event"]) for node, changes in update.items())
+        return Turn(reply=self.state["reply"], steps=steps)
 
     @property
     def state(self) -> WorkflowState:

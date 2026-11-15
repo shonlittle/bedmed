@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BedMed</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#/demo">BedMed</a>
+      <nav id="nav" aria-label="Main">
+        <a href="#/demo">Demo</a>
+        <a href="#/workflow">Workflow</a>
+        <span id="document-links"></span>
+        <a href="#/logs">Logs</a>
+      </nav>
+      <button id="reset-demo" type="button" class="secondary" title="Restore the seed data and clear the conversation">
+        Reset demo data
+      </button>
+    </header>
+
+    <main>
+      <section id="view-demo" class="view demo">
+        <div class="panel chat">
+          <div class="panel-heading">
+            <h2>Assistant</h2>
+            <button id="new-conversation" type="button" class="secondary">New conversation</button>
+          </div>
+          <div id="messages" class="messages" aria-live="polite"></div>
+          <div id="suggestions" class="suggestions"></div>
+          <form id="chat-form" class="chat-form">
+            <input
+              id="chat-input"
+              type="text"
+              maxlength="1000"
+              autocomplete="off"
+              placeholder="Describe the patient and the bed they need"
+              aria-label="Message"
+            />
+            <button type="submit">Send</button>
+          </form>
+        </div>
+
+        <div class="panel board">
+          <div class="panel-heading">
+            <h2>Hospital</h2>
+            <span class="hint">Read live from the hospital API</span>
+          </div>
+          <p id="board-error" class="error" hidden></p>
+          <ul id="legend" class="legend"></ul>
+          <div id="wards"></div>
+          <p class="hint">
+            The menu on a bed changes its status as another hospital system would. Use it to take a bed while the
+            assistant is waiting for a confirmation.
+          </p>
+          <div class="lists">
+            <div>
+              <h3>Waiting for a bed</h3>
+              <ul id="waiting" class="plain"></ul>
+            </div>
+            <div>
+              <h3>Escalations</h3>
+              <ul id="escalations" class="plain"></ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-workflow" class="view" hidden>
+        <div class="panel">
+          <h2>Workflow</h2>
+          <p class="hint">
+            Drawn from the running LangGraph definition. The graph runs once for each message; state is kept between
+            messages.
+          </p>
+          <ul id="node-kinds" class="legend"></ul>
+          <div id="graph" class="graph"></div>
+        </div>
+      </section>
+
+      <section id="view-document" class="view" hidden>
+        <div class="panel">
+          <p id="document-source" class="hint"></p>
+          <article id="document" class="document"></article>
+        </div>
+      </section>
+
+      <section id="view-logs" class="view" hidden>
+        <div class="panel">
+          <div class="panel-heading">
+            <h2>Logs</h2>
+            <span class="hint">Workflow events from the assistant, newest first. Identifiers only, no names.</span>
+          </div>
+          <table class="logs">
+            <thead>
+              <tr>
+                <th>Time (UTC)</th>
+                <th>Level</th>
+                <th>Event</th>
+              </tr>
+            </thead>
+            <tbody id="log-rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11.4.0/dist/mermaid.min.js"></script>
+    <script defer src="/static/app.js"></script>
+  </body>
+</html>
