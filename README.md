@@ -8,12 +8,12 @@ All patient data is fictional. This is a prototype: it does not process real hea
 
 ## Status
 
-| Part | State |
-| --- | --- |
-| Backend API (FastAPI + PostgreSQL) | Working |
-| Conversational assistant (LangGraph) | Working |
-| Web UI (chat, bed board, workflow, logs) | Working |
-| Design and scalability notes | Written |
+| Part                                           | State   |
+| ---------------------------------------------- | ------- |
+| Backend API (FastAPI + PostgreSQL)             | Working |
+| Conversational assistant (LangGraph)           | Working |
+| Web UI (chat, bed board, workflow, logs)       | Working |
+| Design and scalability notes                   | Written |
 | Policy questions (RAG over fictional policies) | Working |
 
 ## Documents
@@ -36,11 +36,11 @@ make up
 
 This starts three services and seeds the database with fictional data on first start:
 
-| Service | Address |
-| --- | --- |
-| Web UI | <http://localhost:8080> |
+| Service                             | Address                      |
+| ----------------------------------- | ---------------------------- |
+| Web UI                              | <http://localhost:8080>      |
 | Hospital API, with interactive docs | <http://localhost:8000/docs> |
-| PostgreSQL | internal to Docker only |
+| PostgreSQL                          | internal to Docker only      |
 
 To reset the database to the seed data:
 
@@ -58,12 +58,12 @@ make down
 
 Put an [OpenRouter](https://openrouter.ai) key in `.env` as `OPENROUTER_API_KEY`, run `make up`, and open <http://localhost:8080>.
 
-| Page | What it shows |
-| --- | --- |
-| Demo | The chat beside a live bed board, with waiting patients and escalations. Each reply has a trace of the workflow steps it took, marked LLM, tool or logic |
-| Workflow | The state machine, drawn from the running LangGraph definition |
-| Design, Scalability, Policies, README | The written deliverables and the policy documents, rendered from the Markdown files in this repository |
-| Logs | Recent workflow events |
+| Page                                  | What it shows                                                                                                                                            |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Demo                                  | The chat beside a live bed board, with waiting patients and escalations. Each reply has a trace of the workflow steps it took, marked LLM, tool or logic |
+| Workflow                              | The state machine, drawn from the running LangGraph definition                                                                                           |
+| Design, Scalability, Policies, README | The written deliverables and the policy documents, rendered from the Markdown files in this repository                                                   |
+| Logs                                  | Recent workflow events                                                                                                                                   |
 
 To demonstrate a conflict: ask for a bed, wait for the proposal, use the menu on that bed to mark it reserved (this plays the part of another hospital system), then say "yes". The assistant reports the conflict and proposes the next bed.
 
@@ -85,15 +85,15 @@ make trace
 
 Things to try (reset the database between runs):
 
-| Say | What happens |
-| --- | --- |
-| "I need a bed for patient 1001" then "medical floor, nothing special" | Asks for the missing details, proposes `4M-102B`, and explains why the free bed `4M-103B` is not eligible |
-| "yes" | Assigns the bed and reports the API's confirmation |
-| "find a medical bed for Alvarez, no special needs" | Two patients match, so it shows a numbered list and asks which one; answer "the first one", a name or an ID |
-| "who's still waiting for a bed?", "what beds are free?", "show me the occupied beds" | Lists patients or beds without disturbing a request in progress |
-| "how long can a bed stay reserved?", "when is a private room required?" | Answers from the policy documents and lists the sections it used |
-| "ICU bed for P-1003, on a monitor, no isolation, can share" | No eligible bed, so it escalates and says nothing was assigned |
-| "tele bed for P-1002, on a monitor, no isolation, can share", then "actually he needs contact precautions" | The changed need discards the proposal and searches again |
+| Say                                                                                                        | What happens                                                                                                |
+| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| "I need a bed for patient 1001" then "medical floor, nothing special"                                      | Asks for the missing details, proposes `4M-102B`, and explains why the free bed `4M-103B` is not eligible   |
+| "yes"                                                                                                      | Assigns the bed and reports the API's confirmation                                                          |
+| "find a medical bed for Alvarez, no special needs"                                                         | Two patients match, so it shows a numbered list and asks which one; answer "the first one", a name or an ID |
+| "who's still waiting for a bed?", "what beds are free?", "show me the occupied beds"                       | Lists patients or beds without disturbing a request in progress                                             |
+| "how long can a bed stay reserved?", "when is a private room required?"                                    | Answers from the policy documents and lists the sections it used                                            |
+| "ICU bed for P-1003, on a monitor, no isolation, can share"                                                | No eligible bed, so it escalates and says nothing was assigned                                              |
+| "tele bed for P-1002, on a monitor, no isolation, can share", then "actually he needs contact precautions" | The changed need discards the proposal and searches again                                                   |
 
 The default model is `anthropic/claude-haiku-5.5`, and policy retrieval uses `openai/text-embedding-3-small`, both through OpenRouter. Set `BEDMED_MODEL` or `BEDMED_EMBEDDING_MODEL` in `.env` to change them; the chat model must support structured outputs.
 
@@ -126,15 +126,15 @@ make lint
 
 The API owns operational state and validates every request itself; it does not trust what the assistant sends.
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /patients` | List patients; filter by part of a name or by whether they have a bed |
-| `GET /patients/{id}` | Patient lookup, including the current bed |
-| `GET /beds` | List beds with status and occupant; filter by status |
-| `POST /beds/search` | Eligible beds for a patient, best first, plus why near misses were rejected |
-| `POST /assignments` | Assign a bed; re-checks eligibility in the same transaction, `409` on conflict |
-| `POST /escalations` | Hand a placement to a human |
-| `PATCH /beds/{id}/status` | Change a bed's operational status |
+| Endpoint                  | Purpose                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------ |
+| `GET /patients`           | List patients; filter by part of a name or by whether they have a bed          |
+| `GET /patients/{id}`      | Patient lookup, including the current bed                                      |
+| `GET /beds`               | List beds with status and occupant; filter by status                           |
+| `POST /beds/search`       | Eligible beds for a patient, best first, plus why near misses were rejected    |
+| `POST /assignments`       | Assign a bed; re-checks eligibility in the same transaction, `409` on conflict |
+| `POST /escalations`       | Hand a placement to a human                                                    |
+| `PATCH /beds/{id}/status` | Change a bed's operational status                                              |
 
 Two ideas shape it:
 
@@ -147,20 +147,20 @@ The seed data in [api/seed.py](api/seed.py) is built around demo scenarios: a cl
 
 The assistant is a LangGraph state machine in [assistant/workflow.py](assistant/workflow.py). The graph runs once per message, and conversation state persists between messages.
 
-| Step | Done by | Where |
-| --- | --- | --- |
-| Understand the message: intent and details | LLM, schema-constrained output | [assistant/extractor.py](assistant/extractor.py), [assistant/prompts.py](assistant/prompts.py) |
-| Decide what to do next | Code: routing functions over explicit state | [assistant/workflow.py](assistant/workflow.py) |
-| Read or change hospital state | Tools that call the API | [assistant/tools.py](assistant/tools.py) |
-| Decide eligibility, confirm assignments | The API | [api/](api/) |
-| Word replies about patients and beds | Templates filled from API data | [assistant/messages.py](assistant/messages.py) |
-| Answer a policy question | Vector search over [policies/](policies/), then the LLM, limited to the retrieved sections | [assistant/policy.py](assistant/policy.py) |
+| Step                                       | Done by                                                                                    | Where                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Understand the message: intent and details | LLM, schema-constrained output                                                             | [assistant/extractor.py](assistant/extractor.py), [assistant/prompts.py](assistant/prompts.py) |
+| Decide what to do next                     | Code: routing functions over explicit state                                                | [assistant/workflow.py](assistant/workflow.py)                                                 |
+| Read or change hospital state              | Tools that call the API                                                                    | [assistant/tools.py](assistant/tools.py)                                                       |
+| Decide eligibility, confirm assignments    | The API                                                                                    | [api/](api/)                                                                                   |
+| Word replies about patients and beds       | Templates filled from API data                                                             | [assistant/messages.py](assistant/messages.py)                                                 |
+| Answer a policy question                   | Vector search over [policies/](policies/), then the LLM, limited to the retrieved sections | [assistant/policy.py](assistant/policy.py)                                                     |
 
 Every message goes through one LLM step, `interpret`, which only fills in a form. That step cannot choose a bed, call a tool, or write a reply, so it cannot claim an assignment that did not happen. The assistant has no database access.
 
 The one other LLM step answers policy questions. It is read-only, sees only the retrieved policy sections, and its answer is shown only if it cites a section that was actually retrieved. The reply is labelled as policy text and lists its sources.
 
-AI assistants were also used to build this project: the working agreement in `CLAUDE.md` was drafted with ChatGPT, and the code, tests and documents were written with Claude Code under review. The [design document](docs/design.md#where-ai-is-used) has the detail.
+AI assistants were also used to build this project: the initial plan and working agreement in `CLAUDE.md` were drafted with Codex, and the code, tests and documents were written with Claude Code under review. The [design document](docs/design.md#where-ai-is-used) has the detail.
 
 **Intents:** request a bed, provide information, confirm, decline, patient status, list patients, list beds, policy question, cancel, unknown.
 

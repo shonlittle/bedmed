@@ -211,7 +211,7 @@ An unstated detail stays unknown and is asked for. It is never assumed to be "no
 
 AI assistants were used throughout development, and this is stated plainly:
 
-- The project's working agreement (`CLAUDE.md`) was drafted with ChatGPT.
+- The project's working agreement (`CLAUDE.md`) was drafted with Codex.
 - The code, tests and documents were written with Claude Code, working from that agreement. Each stage was planned, reviewed and approved before it was built, and every stage was verified by running the tests and the application.
 
 ## Design decisions and trade-offs
