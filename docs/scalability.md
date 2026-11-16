@@ -8,11 +8,12 @@ How this prototype would be measured, improved and grown. Each section says what
 
 - Every workflow step records one structured event: intent detected, details missing, bed search with counts, assignment attempted, succeeded or conflicted, escalation created, tool failure, LLM failure. Events carry identifiers and counts, never patient names.
 - The same events feed the Logs page and the trace shown under each reply.
-- 133 automated tests cover the eligibility rules, the API, a real two-request race for one bed, and the workflow's paths. Workflow tests replace the LLM with a scripted stand-in, so they are fast, free and repeatable.
+- 146 automated tests cover the eligibility rules, the API, a real two-request race for one bed, and the workflow's paths. Workflow tests replace the LLM with a scripted stand-in, so they are fast, free and repeatable.
+- The LLM step is evaluated on its own. `make eval` runs 51 labelled messages through the real model and scores each field by exact match; the output is a small schema, so no judge model is needed. The set covers every intent and every conversation stage, including short answers that depend on context, corrections, and an injection attempt. The current prompt and model score 51 of 51. The set is small and was written alongside the prompt, so this shows the loop works; it is not a measure of accuracy on real nurse phrasing.
 
 **Next**
 
-- **Evaluate the LLM step on its own.** Build a labelled set of real phrasings with the expected intent and details, and score it on every prompt or model change. The output is a small schema, so scoring is exact match per field; no judge model is needed.
+- **Grow the evaluation set from real use.** Add real phrasings, especially misunderstood ones, and run it automatically on every prompt or model change with a pass threshold (`--min-exact`).
 - **Track four kinds of metric:**
   - *Model:* intent accuracy, per-detail accuracy, rate of "not understood".
   - *Conversation:* turns per completed request, clarification rate, abandoned requests.

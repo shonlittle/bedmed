@@ -104,6 +104,14 @@ make test
 
 Tests run against a separate `bedmed_test` database in the same PostgreSQL container, so the race-condition test uses real row locks. The workflow tests replace the LLM with a scripted extractor and use the real API, so the suite needs no API key.
 
+Evaluate the LLM step against 51 labelled messages (this calls the real model, so it needs the API key):
+
+```bash
+make eval
+```
+
+The cases are in [evals/extraction_cases.jsonl](evals/extraction_cases.jsonl); each is a message, the conversation context, and the exact intent and details expected. Scoring is exact match per field.
+
 Lint:
 
 ```bash

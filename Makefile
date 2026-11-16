@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help up down logs reset chat trace test lint format
+.PHONY: help up down logs reset chat trace test eval lint format
 
 help: ## Show the available commands
 	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  make %-8s %s\n", $$1, $$2}'
@@ -25,6 +25,9 @@ trace: ## Terminal chat, showing the workflow path for each turn
 
 test: ## Run the test suite
 	docker compose run --rm api pytest
+
+eval: ## Score the LLM's extraction against labelled cases (calls the model)
+	docker compose run --rm assistant python -m assistant.evaluate
 
 lint: ## Check formatting and lint rules
 	docker compose run --rm api sh -c "ruff format --check . && ruff check ."

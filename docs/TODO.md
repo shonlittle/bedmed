@@ -57,6 +57,12 @@ Implementation plan. Check items off as they are completed.
 - [x] API: `GET /escalations`, and `POST /demo/reset` behind `BEDMED_DEMO_MODE`
 - [x] Tests for the web endpoints
 
+## 2c. Extraction evaluation
+
+- [x] Labelled cases covering every intent and conversation stage (`evals/extraction_cases.jsonl`)
+- [x] Runner that scores the live model per field and can fail below a threshold (`make eval`)
+- [x] Tests for the case file and the scoring
+
 ## 3. Policy RAG (bonus; drop first if time is short)
 
 - [ ] Fictional policy documents in `policies/`

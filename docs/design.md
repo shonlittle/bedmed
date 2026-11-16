@@ -224,6 +224,6 @@ AI assistants were used throughout development, and this is stated plainly:
 - Conversation state is held in memory and lost on restart.
 - There is no authentication or user identity, and the UI is a local demonstration.
 - The eligibility rules are a small, illustrative set, not clinical guidance.
-- Extraction accuracy has been checked by hand, not yet by an automated evaluation set.
+- The extraction evaluation set (51 cases, `make eval`) was written alongside the prompt. It guards against regressions but does not measure accuracy on real nurse phrasing.
 - Policy retrieval (RAG) is designed but not built; see the scalability notes.
 - All data is fictional. The system does not process real health information and makes no compliance claims.
