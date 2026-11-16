@@ -65,13 +65,13 @@ Implementation plan. Check items off as they are completed.
 
 ## 4. Documentation
 
-- [ ] `docs/design.md`: happy path, failure paths, state diagram, intents and entities
-- [ ] `docs/scalability.md`: monitoring and evaluation, multi-workflow scaling, RAG, robustness (1–2 pages)
-- [ ] `README.md`: overview, setup, test command, demo scenarios, where AI is used (runtime and build)
+- [x] `docs/design.md`: happy path, failure paths, state diagram, intents and entities
+- [x] `docs/scalability.md`: monitoring and evaluation, multi-workflow scaling, RAG, robustness (1–2 pages)
+- [x] `README.md`: overview, setup, test command, demo scenarios, where AI is used (runtime and build)
 
 ## Done means
 
-- `docker compose up --build` starts the stack
-- The CLI demo completes: happy path, a clarification, a `409` retry, an escalation
+- `make up` starts the stack
+- The demo (web UI or CLI) completes: happy path, a clarification, a `409` retry, an escalation
 - Tests and Ruff pass
 - The three documents exist

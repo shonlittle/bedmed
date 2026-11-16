@@ -13,10 +13,14 @@ All patient data is fictional. This is a prototype: it does not process real hea
 | Backend API (FastAPI + PostgreSQL) | Working |
 | Conversational assistant (LangGraph) | Working |
 | Web UI (chat, bed board, workflow, logs) | Working |
-| Policy retrieval (RAG) | Not started |
-| Design and scalability notes | Not started |
+| Design and scalability notes | Written |
+| Policy retrieval (RAG) | Designed, not built |
 
-The plan is tracked in [docs/TODO.md](docs/TODO.md).
+## Documents
+
+- [Design](docs/design.md): flows, the conversation state machine, intents and entities, and where AI is used.
+- [Optimization and scalability](docs/scalability.md): monitoring and evaluation, more workflows, RAG, and robustness.
+- [Plan](docs/TODO.md): what was built, in order.
 
 ## Run it
 
@@ -140,6 +144,8 @@ The assistant is a LangGraph state machine in [assistant/workflow.py](assistant/
 | Word the reply | Templates filled from API data | [assistant/messages.py](assistant/messages.py) |
 
 The LLM is called in exactly one node. It cannot choose a bed, call a tool, or write a reply, so it cannot claim an assignment that did not happen. The assistant has no database access.
+
+AI assistants were also used to build this project: the working agreement in `CLAUDE.md` was drafted with ChatGPT, and the code, tests and documents were written with Claude Code under review. The [design document](docs/design.md#where-ai-is-used) has the detail.
 
 **Intents:** request a bed, provide information, confirm, decline, patient status, list patients, list beds, cancel, unknown.
 
