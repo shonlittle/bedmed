@@ -18,6 +18,7 @@ from langgraph.graph.state import CompiledStateGraph
 from assistant import messages
 from assistant.extractor import ExtractionContext, ExtractionError, Extractor
 from assistant.models import SLOT_NAMES, BedStatus, Extraction, Intent, Slots, WardType
+from assistant.policy import PolicyError, PolicyGuide
 from assistant.tools import ApiError, ConflictError, HospitalApi, NotFoundError
 
 logger = logging.getLogger("bedmed.workflow")
@@ -84,6 +85,7 @@ READ_ONLY_NODES = {
     Intent.PATIENT_STATUS: "patient_status",
     Intent.LIST_PATIENTS: "list_patients",
     Intent.LIST_BEDS: "list_beds",
+    Intent.POLICY_QUESTION: "answer_policy",
 }
 
 
@@ -156,9 +158,10 @@ def describe_extraction(extraction: Extraction) -> dict:
 
 
 class Nodes:
-    def __init__(self, extractor: Extractor, api: HospitalApi) -> None:
+    def __init__(self, extractor: Extractor, api: HospitalApi, policy_guide: PolicyGuide | None = None) -> None:
         self._extractor = extractor
         self._api = api
+        self._policy_guide = policy_guide
 
     def interpret(self, state: WorkflowState) -> dict:
         """The only LLM step: turn the message into an intent and entities."""
@@ -379,6 +382,23 @@ class Nodes:
         event = record("beds_listed", status=status or "any", count=len(beds))
         return {"reply": messages.bed_list(beds, status), "event": event}
 
+    def answer_policy(self, state: WorkflowState) -> dict:
+        """Answer a policy question from retrieved policy text. Read-only: it cannot start or change a request."""
+        if self._policy_guide is None:
+            return {"reply": messages.POLICY_NOT_CONFIGURED, "event": record("policy_not_configured")}
+        try:
+            result = self._policy_guide.answer(state["user_message"])
+        except PolicyError as error:
+            event = record("policy_failure", logging.ERROR, error=error)
+            return {"reply": messages.POLICY_UNAVAILABLE, "event": event}
+        retrieved = ",".join(item.chunk.id for item in result.retrieved)
+        cited = ",".join(chunk.id for chunk in result.sources) or "none"
+        event = record("policy_answered", found=result.found, retrieved=retrieved, cited=cited)
+        if not result.found:
+            return {"reply": messages.POLICY_NOT_FOUND, "event": event}
+        reply = messages.policy_answer(result.answer, [chunk.citation for chunk in result.sources])
+        return {"reply": reply, "event": event}
+
     def cancel(self, state: WorkflowState) -> dict:
         return {**fresh_request(), "reply": messages.CANCELLED, "event": record("request_cancelled")}
 
@@ -391,8 +411,8 @@ class Nodes:
 # --- Graph ------------------------------------------------------------------------------------
 
 
-def build_graph(extractor: Extractor, api: HospitalApi) -> CompiledStateGraph:
-    nodes = Nodes(extractor, api)
+def build_graph(extractor: Extractor, api: HospitalApi, policy_guide: PolicyGuide | None = None) -> CompiledStateGraph:
+    nodes = Nodes(extractor, api, policy_guide)
     graph = StateGraph(WorkflowState)
 
     for name in (
@@ -408,6 +428,7 @@ def build_graph(extractor: Extractor, api: HospitalApi) -> CompiledStateGraph:
         "patient_status",
         "list_patients",
         "list_beds",
+        "answer_policy",
         "cancel",
         "fallback",
     ):
@@ -440,7 +461,7 @@ def checkpoint_serializer() -> JsonPlusSerializer:
 
 
 # How each node does its work, for anyone reading a trace.
-LLM_NODES = {"interpret"}
+LLM_NODES = {"interpret", "answer_policy"}
 TOOL_NODES = {"identify_patient", "search_beds", "assign", "escalate", "patient_status", "list_patients", "list_beds"}
 
 

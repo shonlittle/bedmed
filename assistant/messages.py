@@ -34,7 +34,8 @@ BACKEND_UNAVAILABLE = (
 CANCELLED = "Cancelled. No bed has been assigned."
 STATUS_NEEDS_PATIENT = "Which patient? Please give a patient ID (for example P-1001) or a name."
 HELP = (
-    "I can find and assign a bed for a patient, tell you where a patient is, or list patients and beds. "
+    "I can find and assign a bed for a patient, tell you where a patient is, list patients and beds, "
+    "or answer questions about bed policy. "
     "For example: 'I need a telemetry bed for P-1002'."
 )
 
@@ -230,3 +231,18 @@ def bed_list(beds: list[dict], status: str | None) -> str:
     if status == "AVAILABLE":
         lines.append(AVAILABLE_IS_NOT_ELIGIBLE)
     return "\n".join(lines)
+
+
+POLICY_NOT_CONFIGURED = "Policy lookup is not set up in this session."
+POLICY_UNAVAILABLE = "I couldn't look that up because the policy service is unavailable. Nothing has changed."
+POLICY_NOT_FOUND = (
+    "I couldn't find that in the policy documents I have. They cover bed assignment, isolation, "
+    "room sharing, cardiac monitoring and escalation."
+)
+POLICY_DISCLAIMER = "This is policy text, not live bed status."
+
+
+def policy_answer(answer: str, citations: list[str]) -> str:
+    """A policy answer is always labelled as such and always shows its sources."""
+    sources = "\n".join(f"- {citation}" for citation in citations)
+    return f"From the policy documents:\n{answer}\nSources:\n{sources}\n{POLICY_DISCLAIMER}"

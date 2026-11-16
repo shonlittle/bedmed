@@ -14,7 +14,7 @@ All patient data is fictional. This is a prototype: it does not process real hea
 | Conversational assistant (LangGraph) | Working |
 | Web UI (chat, bed board, workflow, logs) | Working |
 | Design and scalability notes | Written |
-| Policy retrieval (RAG) | Designed, not built |
+| Policy questions (RAG over fictional policies) | Working |
 
 ## Documents
 
@@ -62,7 +62,7 @@ Put an [OpenRouter](https://openrouter.ai) key in `.env` as `OPENROUTER_API_KEY`
 | --- | --- |
 | Demo | The chat beside a live bed board, with waiting patients and escalations. Each reply has a trace of the workflow steps it took, marked LLM, tool or logic |
 | Workflow | The state machine, drawn from the running LangGraph definition |
-| Design, Scalability, README | The written deliverables, rendered from the Markdown files in this repository |
+| Design, Scalability, Policies, README | The written deliverables and the policy documents, rendered from the Markdown files in this repository |
 | Logs | Recent workflow events |
 
 To demonstrate a conflict: ask for a bed, wait for the proposal, use the menu on that bed to mark it reserved (this plays the part of another hospital system), then say "yes". The assistant reports the conflict and proposes the next bed.
@@ -91,10 +91,11 @@ Things to try (reset the database between runs):
 | "yes" | Assigns the bed and reports the API's confirmation |
 | "find a medical bed for Alvarez, no special needs" | Two patients match, so it shows a numbered list and asks which one; answer "the first one", a name or an ID |
 | "who's still waiting for a bed?", "what beds are free?", "show me the occupied beds" | Lists patients or beds without disturbing a request in progress |
+| "how long can a bed stay reserved?", "when is a private room required?" | Answers from the policy documents and lists the sections it used |
 | "ICU bed for P-1003, on a monitor, no isolation, can share" | No eligible bed, so it escalates and says nothing was assigned |
 | "tele bed for P-1002, on a monitor, no isolation, can share", then "actually he needs contact precautions" | The changed need discards the proposal and searches again |
 
-The default model is `anthropic/claude-haiku-5.5`. Set `BEDMED_MODEL` in `.env` to use any other OpenRouter model that supports structured outputs.
+The default model is `anthropic/claude-haiku-5.5`, and policy retrieval uses `openai/text-embedding-3-small`, both through OpenRouter. Set `BEDMED_MODEL` or `BEDMED_EMBEDDING_MODEL` in `.env` to change them; the chat model must support structured outputs.
 
 ## Test it
 
@@ -104,13 +105,16 @@ make test
 
 Tests run against a separate `bedmed_test` database in the same PostgreSQL container, so the race-condition test uses real row locks. The workflow tests replace the LLM with a scripted extractor and use the real API, so the suite needs no API key.
 
-Evaluate the LLM step against 51 labelled messages (this calls the real model, so it needs the API key):
+Evaluate the LLM steps against labelled cases (this calls the real models, so it needs the API key):
 
 ```bash
 make eval
 ```
 
-The cases are in [evals/extraction_cases.jsonl](evals/extraction_cases.jsonl); each is a message, the conversation context, and the exact intent and details expected. Scoring is exact match per field.
+- **Extraction:** [evals/extraction_cases.jsonl](evals/extraction_cases.jsonl) has 57 messages, each with the conversation context and the exact intent and details expected. Scoring is exact match per field. Current result: 57 of 57.
+- **Policy retrieval:** [evals/policy_cases.jsonl](evals/policy_cases.jsonl) has 13 questions, each with the policy section that answers it, or none. Retrieval and answers are scored separately. Current result: the expected section is retrieved for 9 of 10 answerable questions and 12 of 13 answers are correct, so the command reports one failure.
+
+Both sets are small and were written alongside the prompts; they guard against regressions and are not a measure of real-world accuracy.
 
 Lint:
 
@@ -149,13 +153,16 @@ The assistant is a LangGraph state machine in [assistant/workflow.py](assistant/
 | Decide what to do next | Code: routing functions over explicit state | [assistant/workflow.py](assistant/workflow.py) |
 | Read or change hospital state | Tools that call the API | [assistant/tools.py](assistant/tools.py) |
 | Decide eligibility, confirm assignments | The API | [api/](api/) |
-| Word the reply | Templates filled from API data | [assistant/messages.py](assistant/messages.py) |
+| Word replies about patients and beds | Templates filled from API data | [assistant/messages.py](assistant/messages.py) |
+| Answer a policy question | Vector search over [policies/](policies/), then the LLM, limited to the retrieved sections | [assistant/policy.py](assistant/policy.py) |
 
-The LLM is called in exactly one node. It cannot choose a bed, call a tool, or write a reply, so it cannot claim an assignment that did not happen. The assistant has no database access.
+Every message goes through one LLM step, `interpret`, which only fills in a form. That step cannot choose a bed, call a tool, or write a reply, so it cannot claim an assignment that did not happen. The assistant has no database access.
+
+The one other LLM step answers policy questions. It is read-only, sees only the retrieved policy sections, and its answer is shown only if it cites a section that was actually retrieved. The reply is labelled as policy text and lists its sources.
 
 AI assistants were also used to build this project: the working agreement in `CLAUDE.md` was drafted with ChatGPT, and the code, tests and documents were written with Claude Code under review. The [design document](docs/design.md#where-ai-is-used) has the detail.
 
-**Intents:** request a bed, provide information, confirm, decline, patient status, list patients, list beds, cancel, unknown.
+**Intents:** request a bed, provide information, confirm, decline, patient status, list patients, list beds, policy question, cancel, unknown.
 
 **Entities:** patient ID or name, ward type, isolation, cardiac monitoring, private room, plus list filters (has a bed, bed status). An unstated detail stays unknown and is asked for; it is never assumed to be "no".
 

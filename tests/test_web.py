@@ -188,7 +188,7 @@ def test_workflow_endpoint_describes_the_graph(web: TestClient):
     assert kinds["interpret"] == "llm"
     assert kinds["assign"] == "tool"
     assert kinds["propose"] == "logic"
-    assert [name for name, kind in kinds.items() if kind == "llm"] == ["interpret"]
+    assert sorted(name for name, kind in kinds.items() if kind == "llm") == ["answer_policy", "interpret"]
 
 
 def test_documents_list_only_files_that_exist(web: TestClient):
@@ -207,3 +207,16 @@ def test_unknown_or_unwritten_documents_return_404(web: TestClient):
     assert web.get("/api/documents/design").status_code == 404
     assert web.get("/api/documents/..%2F.env").status_code == 404
     assert web.get("/api/documents/nope").status_code == 404
+
+
+def test_policies_directory_is_shown_as_one_document(client: TestClient, extractor: ScriptedExtractor, tmp_path: Path):
+    policies = tmp_path / "policies"
+    policies.mkdir()
+    (policies / "b.md").write_text("# Second Policy\n")
+    (policies / "a.md").write_text("# First Policy\n")
+    web = TestClient(build_app(extractor, client, documents_root=tmp_path))
+
+    assert web.get("/api/documents").json() == [{"slug": "policies", "title": "Policies"}]
+    html = web.get("/api/documents/policies").json()["html"]
+    assert html.index("First Policy") < html.index("Second Policy")
+    assert "<hr" in html

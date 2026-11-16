@@ -42,7 +42,8 @@ flowchart LR
 
 | Concern | Where it lives | Notes |
 | --- | --- | --- |
-| Understanding language | `assistant/extractor.py`, `assistant/prompts.py` | The only LLM call |
+| Understanding language | `assistant/extractor.py`, `assistant/prompts.py` | The LLM call made on every message |
+| Policy knowledge | `assistant/policy.py`, `policies/` | Retrieval, then an LLM answer limited to the retrieved text |
 | Conversation logic | `assistant/workflow.py` | Explicit state, pure routing functions |
 | Integrations | `assistant/tools.py` | One method per API call; no database access |
 | Wording | `assistant/messages.py` | Templates filled from API responses |
@@ -77,6 +78,7 @@ flowchart LR
 | Nurse declines the bed | The next eligible bed is offered; when none is left, the request escalates |
 | LLM unavailable or returns invalid output | The assistant says so. State is unchanged |
 | Hospital API unavailable | The assistant says nothing was assigned and never reports success |
+| Question about policy ("how long can a bed stay reserved?") | The closest policy sections are retrieved and the LLM answers from them alone. The reply is labelled as policy and lists its sources; if the policies do not cover it, the assistant says so. A request in progress is untouched |
 | Off-topic or manipulative message | Treated as not understood; any pending question is repeated |
 
 ## Conversation model
@@ -91,6 +93,7 @@ flowchart TD
     interpret -->|"confirm, while<br/>a bed is proposed"| assign["assign<br/>API: create assignment"]
     interpret -->|"decline, while<br/>a bed is proposed"| decline["decline"]
     interpret -->|"status or<br/>list question"| lookup["patient_status, list_patients, list_beds<br/>API: read only"]
+    interpret -->|"policy question"| policy["answer_policy<br/>retrieve passages, LLM answers from them"]
     interpret -->|"cancel"| cancel["cancel"]
     interpret -->|"anything else"| fallback["fallback"]
 
@@ -144,7 +147,7 @@ stateDiagram-v2
 
 | Kind | Nodes |
 | --- | --- |
-| LLM | `interpret` |
+| LLM | `interpret`, `answer_policy` (which first retrieves policy passages) |
 | API tool | `identify_patient`, `search_beds`, `assign`, `escalate`, `patient_status`, `list_patients`, `list_beds` |
 | Plain logic | `collect`, `ask_missing`, `propose`, `decline`, `cancel`, `fallback` |
 
@@ -161,6 +164,7 @@ stateDiagram-v2
 | Patient status | "where is Helen Brooks?" | Read-only lookup |
 | List patients | "who is still waiting?" | Read-only list |
 | List beds | "which beds are free?" | Read-only list |
+| Policy question | "when is a private room required?" | Answer from the policy documents, with sources |
 | Cancel | "never mind" | Clears the request |
 | Unknown | anything else | Asks again; changes nothing |
 
@@ -190,7 +194,8 @@ An unstated detail stays unknown and is asked for. It is never assumed to be "no
 | Deciding the next step | Code | Must be predictable and testable |
 | Deciding which beds are eligible | Code, in the API | A safety rule; must give the same answer every time |
 | Changing hospital state | The API | Single source of truth, transactional |
-| Writing the reply | Templates | A sentence saying "assigned" can only be produced after the API confirms |
+| Writing replies about patients and beds | Templates | A sentence saying "assigned" can only be produced after the API confirms |
+| Answering a policy question | Vector search, then the LLM, limited to the retrieved passages | Policy is unstructured text; explaining it is a language task. Code checks the answer cites a passage that was really retrieved |
 
 ### Prompt design
 
@@ -200,6 +205,7 @@ An unstated detail stays unknown and is asked for. It is never assumed to be "no
 - **Positions, not identities.** For "the first one", the model returns the number 1; code maps it to the patient that was shown.
 - **Message as data.** The user's text is fenced in tags and the model is told to treat it as content to interpret, not instructions.
 - **Examples.** A short set of worked examples covers each intent and the context-dependent cases.
+- **A second, separate prompt for policy answers.** It allows only the supplied passages, requires the ids of the passages used, tells the model to decline when they do not answer the question, and forbids any statement about the live status of a bed or patient.
 
 ### In building this
 
@@ -213,6 +219,8 @@ AI assistants were used throughout development, and this is stated plainly:
 | Decision | Benefit | Cost |
 | --- | --- | --- |
 | LLM extracts only; no tool calling by the model | The model cannot take or claim an action | Less flexible than an agent; new behaviour needs new code |
+| Policy answers are written by the LLM | Rules are explained in plain language | The one place model-written text reaches the user. It is labelled as policy, must cite a retrieved passage, and cannot change any state |
+| Policy sections embedded in memory, no vector database | Nothing extra to run for 24 sections | Would not suit thousands of documents |
 | Template replies | Statements of fact are tied to API results | Less natural phrasing |
 | Explicit graph, run once per message | Every path can be drawn, traced and tested | More structure than a simple loop |
 | Eligibility in the API, re-checked at assignment | No double booking; stale searches are harmless | The rules run twice |
@@ -224,6 +232,6 @@ AI assistants were used throughout development, and this is stated plainly:
 - Conversation state is held in memory and lost on restart.
 - There is no authentication or user identity, and the UI is a local demonstration.
 - The eligibility rules are a small, illustrative set, not clinical guidance.
-- The extraction evaluation set (51 cases, `make eval`) was written alongside the prompt. It guards against regressions but does not measure accuracy on real nurse phrasing.
-- Policy retrieval (RAG) is designed but not built; see the scalability notes.
+- The extraction evaluation set (57 cases, `make eval`) was written alongside the prompt. It guards against regressions but does not measure accuracy on real nurse phrasing.
+- Policy retrieval uses vector search alone. In the evaluation, one of ten answerable questions retrieves a neighbouring section, not the best one; combining keyword and vector search is the planned fix.
 - All data is fictional. The system does not process real health information and makes no compliance claims.

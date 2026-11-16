@@ -12,7 +12,7 @@ const BED_STATUSES = {
 };
 
 const NODE_KINDS = {
-  llm: "LLM: interprets the message",
+  llm: "LLM: interprets the message, or answers from retrieved policy text",
   tool: "Tool: calls the hospital API",
   logic: "Logic: ordinary code, no external call",
 };
@@ -24,6 +24,7 @@ const SUGGESTIONS = [
   "ICU bed for P-1003, on a monitor, no isolation, can share",
   "What beds are free?",
   "Who is still waiting for a bed?",
+  "When is a private room required?",
 ];
 
 const BOARD_REFRESH_MS = 4000;

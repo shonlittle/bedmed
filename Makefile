@@ -26,8 +26,9 @@ trace: ## Terminal chat, showing the workflow path for each turn
 test: ## Run the test suite
 	docker compose run --rm api pytest
 
-eval: ## Score the LLM's extraction against labelled cases (calls the model)
+eval: ## Score extraction and policy retrieval against labelled cases (calls the models)
 	docker compose run --rm assistant python -m assistant.evaluate
+	docker compose run --rm assistant python -m assistant.evaluate_policy
 
 lint: ## Check formatting and lint rules
 	docker compose run --rm api sh -c "ruff format --check . && ruff check ."

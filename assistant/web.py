@@ -24,16 +24,19 @@ from pydantic import BaseModel, Field
 from assistant.config import MISSING_KEY_MESSAGE, load_settings
 from assistant.extractor import Extractor, LLMExtractor
 from assistant.models import BedStatus
+from assistant.policy import PolicyGuide, build_policy_guide
 from assistant.tools import ApiError, HospitalApi
 from assistant.workflow import Conversation, Step, build_graph
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = Path(__file__).parent / "static"
 
-# Deliverables shown in the UI, rendered from the same Markdown files that GitHub displays.
+# Documents shown in the UI, rendered from the same Markdown files that GitHub displays.
+# A directory is shown as one page containing each of its Markdown files.
 DOCUMENTS = {
     "design": ("Design", "docs/design.md"),
     "scalability": ("Scalability", "docs/scalability.md"),
+    "policies": ("Policies", "policies"),
     "readme": ("README", "README.md"),
 }
 BED_ID_PATTERN = r"^[A-Za-z0-9-]{1,20}$"
@@ -91,13 +94,14 @@ class BedStatusIn(BaseModel):
 class Sessions:
     """Conversations keyed by browser session. State lives in memory and is lost on restart."""
 
-    def __init__(self, extractor: Extractor, api: HospitalApi) -> None:
+    def __init__(self, extractor: Extractor, api: HospitalApi, policy_guide: PolicyGuide | None) -> None:
         self._extractor = extractor
         self._api = api
+        self._policy_guide = policy_guide
         self.reset()
 
     def reset(self) -> None:
-        self._graph = build_graph(self._extractor, self._api)
+        self._graph = build_graph(self._extractor, self._api, self._policy_guide)
 
     def conversation(self, session_id: str) -> Conversation:
         return Conversation(self._graph, thread_id=session_id)
@@ -115,19 +119,26 @@ def unavailable(message: str) -> HTTPException:
 
 
 def render_markdown(path: Path) -> str:
-    return markdown.markdown(path.read_text(encoding="utf-8"), extensions=["tables", "fenced_code"])
+    files = sorted(path.glob("*.md")) if path.is_dir() else [path]
+    text = "\n\n---\n\n".join(file.read_text(encoding="utf-8") for file in files)
+    return markdown.markdown(text, extensions=["tables", "fenced_code"])
+
+
+def has_content(path: Path) -> bool:
+    return path.is_file() or (path.is_dir() and any(path.glob("*.md")))
 
 
 def build_app(
     extractor: Extractor | None,
     http_client: httpx.Client,
+    policy_guide: PolicyGuide | None = None,
     documents_root: Path = REPO_ROOT,
     lifespan=None,
 ) -> FastAPI:
     """Assemble the app. `extractor` is None when no LLM key is configured; chat then explains how to fix it."""
     app = FastAPI(title="BedMed assistant", docs_url=None, redoc_url=None, lifespan=lifespan)
     api = HospitalApi(http_client)
-    sessions = Sessions(extractor, api) if extractor else None
+    sessions = Sessions(extractor, api, policy_guide) if extractor else None
 
     @app.post("/api/chat")
     def chat(body: ChatIn) -> ChatOut:
@@ -169,7 +180,7 @@ def build_app(
         return [
             {"slug": slug, "title": title}
             for slug, (title, relative_path) in DOCUMENTS.items()
-            if (documents_root / relative_path).is_file()
+            if has_content(documents_root / relative_path)
         ]
 
     @app.get("/api/documents/{slug}")
@@ -178,7 +189,7 @@ def build_app(
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No such document.")
         title, relative_path = DOCUMENTS[slug]
         path = documents_root / relative_path
-        if not path.is_file():
+        if not has_content(path):
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="This document has not been written yet.")
         return {"title": title, "source": relative_path, "html": render_markdown(path)}
 
@@ -230,14 +241,15 @@ def create_app() -> FastAPI:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     settings = load_settings()
     http_client = httpx.Client(base_url=settings.api_url, timeout=10)
-    extractor = None
+    extractor = policy_guide = None
     if settings.llm_api_key:
         llm_client = OpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url, timeout=30, max_retries=1)
         extractor = LLMExtractor(llm_client, settings.model)
+        policy_guide = build_policy_guide(llm_client, settings.model, settings.embedding_model)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
         http_client.close()
 
-    return build_app(extractor, http_client, lifespan=lifespan)
+    return build_app(extractor, http_client, policy_guide, lifespan=lifespan)

@@ -63,11 +63,14 @@ Implementation plan. Check items off as they are completed.
 - [x] Runner that scores the live model per field and can fail below a threshold (`make eval`)
 - [x] Tests for the case file and the scoring
 
-## 3. Policy RAG (bonus; drop first if time is short)
+## 3. Policy RAG
 
-- [ ] Fictional policy documents in `policies/`
-- [ ] Lightweight in-process retrieval
-- [ ] Policy-question intent routed to retrieval, answers cite the source document
+- [x] Fictional policy documents in `policies/` (5 documents, 24 sections)
+- [x] In-process retrieval: sections embedded once, cosine similarity, top three
+- [x] Policy-question intent routed to a read-only node; answers cite the source sections
+- [x] Citations checked in code; uncited or unsupported answers are replaced by "not found"
+- [x] Policy evaluation set scoring retrieval and answers separately (`make eval`)
+- [x] LLM calls cap their output size and report the HTTP status on failure
 
 ## 4. Documentation
 

@@ -95,6 +95,7 @@ def test_llm_extractor_requests_schema_constrained_output():
     assert call["model"] == "test-model"
     assert call["response_format"] is Extraction
     assert call["temperature"] == 0
+    assert call["max_tokens"] == 400
 
 
 def test_llm_extractor_wraps_provider_errors():
@@ -144,3 +145,12 @@ def test_tools_handle_non_json_error_bodies():
     with pytest.raises(BackendError) as raised:
         api.get_patient("P-1001")
     assert raised.value.code == "HTTP_502"
+
+
+def test_llm_error_description_includes_the_http_status_when_there_is_one():
+    class OutOfCredit(OpenAIError):
+        status_code = 402
+
+    extractor = LLMExtractor(FakeLLMClient(OutOfCredit("no credit")), "test-model")
+    with pytest.raises(ExtractionError, match=r"OutOfCredit \(HTTP 402\)"):
+        extractor.extract("hello", CONTEXT)

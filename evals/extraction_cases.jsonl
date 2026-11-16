@@ -49,3 +49,9 @@
 {"id": "status-while-awaiting", "message": "what bed is P-2002 in?", "context": {"stage": "AWAITING_CONFIRMATION", "proposed_bed_id": "4M-102B"}, "expected": {"intent": "PATIENT_STATUS", "patient_id": "P-2002"}}
 {"id": "cancel-while-awaiting", "message": "cancel", "context": {"stage": "AWAITING_CONFIRMATION", "proposed_bed_id": "4M-102B"}, "expected": {"intent": "CANCEL"}}
 {"id": "unclear-while-awaiting", "message": "hmm", "context": {"stage": "AWAITING_CONFIRMATION", "proposed_bed_id": "4M-102B"}, "expected": {"intent": "UNKNOWN"}}
+{"id": "policy-private-room", "message": "when is a private room required?", "expected": {"intent": "POLICY_QUESTION"}}
+{"id": "policy-reserved-how-long", "message": "how long can a bed stay reserved?", "expected": {"intent": "POLICY_QUESTION"}}
+{"id": "policy-who-gets-escalations", "message": "who handles escalations overnight?", "expected": {"intent": "POLICY_QUESTION"}}
+{"id": "policy-why-not-share", "message": "why can't she go in with a male patient?", "context": {"stage": "AWAITING_CONFIRMATION", "proposed_bed_id": "4M-102B"}, "expected": {"intent": "POLICY_QUESTION"}}
+{"id": "policy-while-collecting", "message": "what's the rule if we don't know the patient's sex?", "context": {"stage": "COLLECTING", "pending_slots": ["isolation_required"]}, "expected": {"intent": "POLICY_QUESTION"}}
+{"id": "policy-vs-list-beds", "message": "which beds are reserved right now?", "expected": {"intent": "LIST_BEDS", "bed_status": "RESERVED"}}

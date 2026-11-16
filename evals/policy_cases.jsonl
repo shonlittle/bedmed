@@ -1,0 +1,13 @@
+{"id": "reserved-duration", "question": "How long can a bed stay reserved?", "expected_source": "bed-assignment#4"}
+{"id": "cleaning-time", "question": "How long does it take to clean a bed after an isolation patient?", "expected_source": "isolation#4"}
+{"id": "no-isolation-bed", "question": "What do we do when no isolation bed is free?", "expected_source": "isolation#3"}
+{"id": "unknown-sex", "question": "What happens if we don't know the patient's sex for a shared room?", "expected_source": "room-sharing#3"}
+{"id": "private-room-when", "question": "When is a private room required?", "expected_source": "room-sharing#4"}
+{"id": "why-not-share", "question": "Why can't she go in a shared room with a male patient?", "expected_source": "room-sharing#2"}
+{"id": "escalation-overnight", "question": "Who handles escalations overnight?", "expected_source": "escalation#3"}
+{"id": "relax-requirements", "question": "Can I drop the monitoring requirement to get the patient a bed faster?", "expected_source": "escalation#2"}
+{"id": "medical-monitoring", "question": "Can a medical ward patient who needs monitoring stay on the medical ward?", "expected_source": "monitoring#3"}
+{"id": "closed-ward", "question": "Can we use a free bed in a ward that is closed?", "expected_source": "escalation#5"}
+{"id": "not-covered-visiting", "question": "What are the visiting hours?"}
+{"id": "not-covered-discharge", "question": "What is the discharge checklist for a surgical patient?"}
+{"id": "not-covered-live-status", "question": "Is bed 4M-101 free right now?"}

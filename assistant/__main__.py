@@ -9,6 +9,7 @@ from openai import OpenAI
 
 from assistant.config import ConfigError, load_settings
 from assistant.extractor import LLMExtractor
+from assistant.policy import build_policy_guide
 from assistant.tools import HospitalApi
 from assistant.workflow import Conversation, build_graph
 
@@ -38,7 +39,8 @@ def main() -> int:
 
     llm_client = OpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url, timeout=30, max_retries=1)
     with httpx.Client(base_url=settings.api_url, timeout=10) as http_client:
-        graph = build_graph(LLMExtractor(llm_client, settings.model), HospitalApi(http_client))
+        policy_guide = build_policy_guide(llm_client, settings.model, settings.embedding_model)
+        graph = build_graph(LLMExtractor(llm_client, settings.model), HospitalApi(http_client), policy_guide)
         chat(Conversation(graph), trace=args.trace)
     return 0
 

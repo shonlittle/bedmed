@@ -12,6 +12,16 @@ from assistant.prompts import build_extraction_messages
 
 logger = logging.getLogger("bedmed.extractor")
 
+# An extraction is a small JSON object. Capping the output bounds cost and latency, and stops the
+# provider reserving credit for the model's full output limit on every call.
+MAX_OUTPUT_TOKENS = 400
+
+
+def describe_llm_error(error: Exception) -> str:
+    """Error type and HTTP status only: enough to diagnose, with no request or response content."""
+    status = getattr(error, "status_code", None)
+    return f"{type(error).__name__} (HTTP {status})" if status else type(error).__name__
+
 
 class ExtractionError(Exception):
     """The message could not be interpreted (LLM unavailable, refused, or returned invalid output)."""
@@ -48,9 +58,10 @@ class LLMExtractor:
                 messages=messages,
                 response_format=Extraction,
                 temperature=0,
+                max_tokens=MAX_OUTPUT_TOKENS,
             )
         except (OpenAIError, ValidationError) as error:
-            raise ExtractionError(f"LLM call failed: {type(error).__name__}") from error
+            raise ExtractionError(f"LLM call failed: {describe_llm_error(error)}") from error
 
         extraction = completion.choices[0].message.parsed
         if extraction is None:
