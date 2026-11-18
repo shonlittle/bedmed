@@ -1,4 +1,8 @@
-"""Intent and entity extraction. This is the only place the assistant calls an LLM."""
+"""Intent and entity extraction: the LLM turns one user message into a structured `Extraction`.
+
+This is the only LLM call in the placement workflow. Policy questions use a second,
+read-only LLM call in `assistant/policy.py`.
+"""
 
 import logging
 from dataclasses import dataclass

@@ -13,6 +13,7 @@ from assistant.evaluate_policy import load_cases as load_policy_cases
 from assistant.evaluate_policy import score_case as score_policy_case
 from assistant.models import Extraction, Intent
 from assistant.policy import (
+    KeywordScorer,
     PolicyAnswer,
     PolicyChunk,
     PolicyError,
@@ -20,7 +21,9 @@ from assistant.policy import (
     PolicyIndex,
     chunk_document,
     cosine_similarity,
+    fuse_rankings,
     load_policy_chunks,
+    ranks,
 )
 from assistant.prompts import build_policy_answer_messages
 from assistant.tools import HospitalApi
@@ -103,6 +106,47 @@ def test_cosine_similarity():
     assert cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
     assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
     assert cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
+
+
+def test_keyword_scorer_favours_rare_shared_words():
+    scorer = KeywordScorer(["the bed is reserved", "the bed is clean", "the ward is open"])
+
+    scores = scorer.scores("Is the bed reserved?")
+
+    assert scores[0] > scores[1] > scores[2]
+
+
+def test_keyword_scorer_gives_zero_when_no_word_is_shared():
+    assert KeywordScorer(["the bed is reserved"]).scores("visiting hours") == [0.0]
+
+
+def test_ranks_start_at_one_for_the_highest_score():
+    assert ranks([0.2, 0.9, 0.5]) == [3, 1, 2]
+
+
+def test_equal_scores_share_a_rank():
+    assert ranks([0.5, 0.5, 0.1]) == [1, 1, 3]
+
+
+def test_fusion_prefers_an_item_ranked_well_by_both_lists():
+    fused = fuse_rankings([0.9, 0.8, 0.1], [5.0, 1.0, 9.0])
+
+    assert fused[0] == max(fused)
+
+
+class UninformativeEmbedder:
+    """Gives every text the same vector, so only the keyword ranking can separate passages."""
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0] for _ in texts]
+
+
+def test_search_finds_a_passage_by_its_exact_terms_when_vectors_do_not_help():
+    index = PolicyIndex(load_policy_chunks(), UninformativeEmbedder())
+
+    results = index.search("Can I relax a monitoring requirement to find a bed?")
+
+    assert results[0].chunk.id == "escalation#2"
 
 
 def test_search_returns_the_most_relevant_passages_first():

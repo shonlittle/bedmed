@@ -160,7 +160,7 @@ def main() -> int:
         print(f"Cannot run the evaluation: {args.cases} contains no cases.", file=sys.stderr)
         return 2
 
-    client = OpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url, timeout=30, max_retries=1)
+    client = OpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url, timeout=30, max_retries=4)
     results = score_cases(cases, LLMExtractor(client, settings.model))
     print(format_report(results, settings.model))
     return 0 if exact_match_rate(results) >= args.min_exact else 1

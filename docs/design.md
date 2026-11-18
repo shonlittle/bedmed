@@ -195,7 +195,7 @@ An unstated detail stays unknown and is asked for. It is never assumed to be "no
 | Deciding which beds are eligible | Code, in the API | A safety rule; must give the same answer every time |
 | Changing hospital state | The API | Single source of truth, transactional |
 | Writing replies about patients and beds | Templates | A sentence saying "assigned" can only be produced after the API confirms |
-| Answering a policy question | Vector search, then the LLM, limited to the retrieved passages | Policy is unstructured text; explaining it is a language task. Code checks the answer cites a passage that was really retrieved |
+| Answering a policy question | Hybrid keyword and vector search, then the LLM, limited to the retrieved passages | Policy is unstructured text; explaining it is a language task. Code checks the answer cites a passage that was really retrieved |
 
 ### Prompt design
 
@@ -220,7 +220,7 @@ AI assistants were used throughout development, and this is stated plainly:
 | --- | --- | --- |
 | LLM extracts only; no tool calling by the model | The model cannot take or claim an action | Less flexible than an agent; new behaviour needs new code |
 | Policy answers are written by the LLM | Rules are explained in plain language | The one place model-written text reaches the user. It is labelled as policy, must cite a retrieved passage, and cannot change any state |
-| Policy sections embedded in memory, no vector database | Nothing extra to run for 24 sections | Would not suit thousands of documents |
+| Policy sections indexed in memory (vectors plus keywords), no search service | Nothing extra to run for 24 sections | Would not suit thousands of documents |
 | Template replies | Statements of fact are tied to API results | Less natural phrasing |
 | Explicit graph, run once per message | Every path can be drawn, traced and tested | More structure than a simple loop |
 | Eligibility in the API, re-checked at assignment | No double booking; stale searches are harmless | The rules run twice |
@@ -233,5 +233,5 @@ AI assistants were used throughout development, and this is stated plainly:
 - There is no authentication or user identity, and the UI is a local demonstration.
 - The eligibility rules are a small, illustrative set, not clinical guidance.
 - The extraction evaluation set (57 cases, `make eval`) was written alongside the prompt. It guards against regressions but does not measure accuracy on real nurse phrasing.
-- Policy retrieval uses vector search alone. In the evaluation, one of ten answerable questions retrieves a neighbouring section, not the best one; combining keyword and vector search is the planned fix.
+- The policy evaluation set (21 questions) is small and self-written, like the extraction set. It found one real retrieval miss, which hybrid search fixed, but it does not measure accuracy on real questions.
 - All data is fictional. The system does not process real health information and makes no compliance claims.

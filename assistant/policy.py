@@ -4,14 +4,18 @@ Retrieval is for unstructured policy text only. Live facts such as bed status al
 from the hospital API, and a policy answer can never trigger an action.
 
 The steps are separate so each can be tested and evaluated on its own:
-chunk the documents, embed them, retrieve the closest passages, then have the LLM answer
+chunk the documents, retrieve the most relevant passages, then have the LLM answer
 from those passages alone. Code then checks the answer's citations before it is shown.
+
+Retrieval is hybrid: a vector ranking (meaning) and a keyword ranking (exact terms) are
+combined, because a question can match one section's topic while another section holds the rule.
 """
 
 import logging
 import math
 import re
 import threading
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -26,8 +30,13 @@ logger = logging.getLogger("bedmed.policy")
 
 DEFAULT_POLICY_DIRECTORY = Path(__file__).resolve().parent.parent / "policies"
 PASSAGES_PER_QUESTION = 3
-MAX_ANSWER_TOKENS = 600
+MAX_ANSWER_TOKENS = 1200  # Answers measured near 500 tokens; a 600 cap occasionally cut one off.
 SECTION_HEADING = re.compile(r"^## +(.+)$", re.MULTILINE)
+WORD = re.compile(r"[a-z0-9]+")
+# Standard BM25 and reciprocal-rank-fusion constants, left at their usual defaults rather than tuned.
+BM25_K1 = 1.2
+BM25_B = 0.75
+RANK_FUSION_K = 60
 
 
 class PolicyError(Exception):
@@ -94,6 +103,45 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     return dot / norms if norms else 0.0
 
 
+def tokenize(text: str) -> list[str]:
+    return WORD.findall(text.lower())
+
+
+class KeywordScorer:
+    """BM25 keyword scoring: rare words shared by the question and a passage count the most."""
+
+    def __init__(self, texts: list[str]) -> None:
+        self._term_counts = [Counter(tokenize(text)) for text in texts]
+        self._average_length = sum(counts.total() for counts in self._term_counts) / len(texts) if texts else 0.0
+        self._passages_containing = Counter(term for counts in self._term_counts for term in counts)
+
+    def scores(self, question: str) -> list[float]:
+        terms = set(tokenize(question))
+        return [self._score(terms, counts) for counts in self._term_counts]
+
+    def _score(self, terms: set[str], counts: Counter[str]) -> float:
+        total = len(self._term_counts)
+        length_penalty = 1 - BM25_B + BM25_B * counts.total() / self._average_length
+        score = 0.0
+        for term in terms & counts.keys():
+            containing = self._passages_containing[term]
+            rarity = math.log(1 + (total - containing + 0.5) / (containing + 0.5))
+            frequency = counts[term]
+            score += rarity * frequency * (BM25_K1 + 1) / (frequency + BM25_K1 * length_penalty)
+        return score
+
+
+def ranks(scores: list[float]) -> list[int]:
+    """The rank of each item, 1 being the highest score. Equal scores share a rank."""
+    return [1 + sum(other > score for other in scores) for score in scores]
+
+
+def fuse_rankings(*score_lists: list[float]) -> list[float]:
+    """Reciprocal rank fusion: combine rankings by rank, so their score scales need not be comparable."""
+    rank_lists = [ranks(scores) for scores in score_lists]
+    return [sum(1 / (RANK_FUSION_K + rank) for rank in item_ranks) for item_ranks in zip(*rank_lists, strict=True)]
+
+
 @dataclass(frozen=True)
 class ScoredChunk:
     chunk: PolicyChunk
@@ -101,15 +149,18 @@ class ScoredChunk:
 
 
 class PolicyIndex:
-    """An in-memory vector index. The documents are embedded once, on first use.
+    """An in-memory hybrid index. The documents are embedded once, on first use.
 
-    A few dozen sections do not need a vector database. At larger scale the same interface
-    would sit in front of pgvector or a dedicated store.
+    A few dozen sections do not need a search service. At larger scale the same interface
+    would sit in front of PostgreSQL (pgvector plus full-text search) or a dedicated store.
     """
 
     def __init__(self, chunks: list[PolicyChunk], embedder: Embedder) -> None:
         self._chunks = chunks
         self._embedder = embedder
+        # The title and heading are indexed with the body, so a section is found by its topic too.
+        self._texts = [f"{chunk.document}: {chunk.section}\n{chunk.text}" for chunk in chunks]
+        self._keywords = KeywordScorer(self._texts)
         self._vectors: list[list[float]] | None = None
         self._lock = threading.Lock()
 
@@ -118,18 +169,15 @@ class PolicyIndex:
             raise PolicyError("No policy documents are loaded.")
         vectors = self._chunk_vectors()
         (question_vector,) = self._embedder.embed([question])
-        scored = [
-            ScoredChunk(chunk, cosine_similarity(question_vector, vector))
-            for chunk, vector in zip(self._chunks, vectors, strict=True)
-        ]
+        vector_scores = [cosine_similarity(question_vector, vector) for vector in vectors]
+        fused = fuse_rankings(vector_scores, self._keywords.scores(question))
+        scored = [ScoredChunk(chunk, score) for chunk, score in zip(self._chunks, fused, strict=True)]
         return sorted(scored, key=lambda item: item.score, reverse=True)[:limit]
 
     def _chunk_vectors(self) -> list[list[float]]:
         with self._lock:
             if self._vectors is None:
-                # The title and heading are embedded with the body, so a section is found by its topic too.
-                texts = [f"{chunk.document}: {chunk.section}\n{chunk.text}" for chunk in self._chunks]
-                self._vectors = self._embedder.embed(texts)
+                self._vectors = self._embedder.embed(self._texts)
                 logger.info("policy_index_built chunks=%d", len(self._chunks))
             return self._vectors
 

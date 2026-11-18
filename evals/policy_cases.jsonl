@@ -11,3 +11,11 @@
 {"id": "not-covered-visiting", "question": "What are the visiting hours?"}
 {"id": "not-covered-discharge", "question": "What is the discharge checklist for a surgical patient?"}
 {"id": "not-covered-live-status", "question": "Is bed 4M-101 free right now?"}
+{"id": "who-decides-isolation", "question": "Who decides whether a patient needs isolation?", "expected_source": "isolation#1"}
+{"id": "isolation-room-features", "question": "What makes a room suitable for an isolation patient?", "expected_source": "isolation#2"}
+{"id": "ward-full-other-level", "question": "The telemetry ward is full. Can the patient go to intensive care instead?", "expected_source": "monitoring#4"}
+{"id": "two-beds-which", "question": "If two beds would both work, which one should we pick?", "expected_source": "bed-assignment#5"}
+{"id": "verbal-agreement", "question": "Does agreeing a bed over the phone count as assigning it?", "expected_source": "bed-assignment#6"}
+{"id": "patient-preference-private", "question": "The patient would simply like their own room. Is that enough to require one?", "expected_source": "room-sharing#4"}
+{"id": "escalation-contents", "question": "What information goes into an escalation?", "expected_source": "escalation#4"}
+{"id": "not-covered-transfer-out", "question": "What is the process for transferring a patient to another hospital?"}

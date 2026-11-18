@@ -261,12 +261,12 @@ Relevant fields may include:
 
 - `patient_id`
 - `required_ward_type`
-- `acuity`
 - `isolation_required`
 - `monitoring_required`
 - `sex`
-- `gender_identity`
 - `requires_private_room`
+
+A production system might also use attributes such as acuity and gender identity. The MVP deliberately models only the fields its eligibility rules use.
 
 Use only entirely fictional patient information.
 

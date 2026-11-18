@@ -66,7 +66,7 @@ Implementation plan. Check items off as they are completed.
 ## 3. Policy RAG
 
 - [x] Fictional policy documents in `policies/` (5 documents, 24 sections)
-- [x] In-process retrieval: sections embedded once, cosine similarity, top three
+- [x] In-process retrieval: sections embedded once, top three (vector only at first; hybrid since section 5)
 - [x] Policy-question intent routed to a read-only node; answers cite the source sections
 - [x] Citations checked in code; uncited or unsupported answers are replaced by "not found"
 - [x] Policy evaluation set scoring retrieval and answers separately (`make eval`)
@@ -77,6 +77,16 @@ Implementation plan. Check items off as they are completed.
 - [x] `docs/design.md`: happy path, failure paths, state diagram, intents and entities
 - [x] `docs/scalability.md`: monitoring and evaluation, multi-workflow scaling, RAG, robustness (1–2 pages)
 - [x] `README.md`: overview, setup, test command, demo scenarios, where AI is used (runtime and build)
+
+## 5. Pre-submission review fixes
+
+- [x] Correct two docstrings that still said the LLM is called in one place only
+- [x] Align `CLAUDE.md` placement fields with what the MVP models
+- [x] Scalability notes: describe the production integration boundary (ADT, FHIR), staying within two pages
+- [x] Add policy evaluation questions before changing retrieval, and record the baseline (16 of 17 retrieval, 20 of 21 answers)
+- [x] Hybrid keyword-plus-vector retrieval with rank fusion, untuned; kept because retrieval rose to 17 of 17 with no regressions
+- [x] Raise the policy answer output cap from 600 to 1200 tokens after an answer was cut off during evaluation
+- [x] Re-run tests, lint and evaluations; make every number in the documents match
 
 ## Done means
 

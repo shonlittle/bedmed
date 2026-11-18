@@ -118,7 +118,7 @@ def main() -> int:
         print(f"Cannot run the evaluation: {error}", file=sys.stderr)
         return 2
 
-    client = OpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url, timeout=30, max_retries=1)
+    client = OpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url, timeout=30, max_retries=4)
     guide = build_policy_guide(client, settings.model, settings.embedding_model)
     results = [score_case(case, guide) for case in cases]
     print(f"Models: {settings.embedding_model} (retrieval), {settings.model} (answers)")

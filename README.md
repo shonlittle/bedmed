@@ -112,7 +112,7 @@ make eval
 ```
 
 - **Extraction:** [evals/extraction_cases.jsonl](evals/extraction_cases.jsonl) has 57 messages, each with the conversation context and the exact intent and details expected. Scoring is exact match per field. Current result: 57 of 57.
-- **Policy retrieval:** [evals/policy_cases.jsonl](evals/policy_cases.jsonl) has 13 questions, each with the policy section that answers it, or none. Retrieval and answers are scored separately. Current result: the expected section is retrieved for 9 of 10 answerable questions and 12 of 13 answers are correct, so the command reports one failure.
+- **Policy retrieval:** [evals/policy_cases.jsonl](evals/policy_cases.jsonl) has 21 questions, each with the policy section that answers it, or none. Retrieval and answers are scored separately. Current result: the expected section is retrieved for 17 of 17 answerable questions and 21 of 21 answers are correct. An earlier vector-only version retrieved 9 of 10; the miss led to the hybrid keyword-plus-vector retrieval used now. Results can vary by a case between runs, because the answering model is not fully deterministic.
 
 Both sets are small and were written alongside the prompts; they guard against regressions and are not a measure of real-world accuracy.
 
@@ -154,7 +154,7 @@ The assistant is a LangGraph state machine in [assistant/workflow.py](assistant/
 | Read or change hospital state              | Tools that call the API                                                                    | [assistant/tools.py](assistant/tools.py)                                                       |
 | Decide eligibility, confirm assignments    | The API                                                                                    | [api/](api/)                                                                                   |
 | Word replies about patients and beds       | Templates filled from API data                                                             | [assistant/messages.py](assistant/messages.py)                                                 |
-| Answer a policy question                   | Vector search over [policies/](policies/), then the LLM, limited to the retrieved sections | [assistant/policy.py](assistant/policy.py)                                                     |
+| Answer a policy question                   | Hybrid keyword and vector search over [policies/](policies/), then the LLM, limited to the retrieved sections | [assistant/policy.py](assistant/policy.py)                                                     |
 
 Every message goes through one LLM step, `interpret`, which only fills in a form. That step cannot choose a bed, call a tool, or write a reply, so it cannot claim an assignment that did not happen. The assistant has no database access.
 

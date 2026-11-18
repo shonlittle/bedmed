@@ -1,7 +1,8 @@
 """The admission workflow as an explicit LangGraph state machine.
 
 The graph runs once per user message; state persists between messages through the checkpointer.
-The LLM is used in exactly one node (`interpret`). Every decision after that is ordinary code,
+The LLM interprets each message in `interpret`. A second, read-only LLM step (`answer_policy`)
+answers policy questions from retrieved policy text. Every decision is ordinary code,
 and every change to hospital state goes through a tool that calls the API.
 """
 
