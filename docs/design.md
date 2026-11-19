@@ -51,6 +51,67 @@ flowchart LR
 | State changes | `api/placement.py` | Transactional; re-validates before writing |
 | Data | PostgreSQL | Reached only through the API |
 
+## Data model
+
+The database holds live operational state only. It belongs to the API; the assistant never connects to it.
+
+```mermaid
+erDiagram
+    WARD ||--o{ ROOM : contains
+    ROOM ||--|{ BED : contains
+    BED ||--o| ASSIGNMENT : "is taken by"
+    PATIENT ||--o| ASSIGNMENT : "is placed by"
+    PATIENT ||--o{ ESCALATION : "is subject of"
+
+    WARD {
+        string id PK "e.g. 4M"
+        string name
+        enum ward_type "MEDICAL, TELEMETRY, ICU, SURGICAL"
+        enum status "OPEN, CLOSED"
+    }
+    ROOM {
+        string id PK "e.g. 4M-102"
+        string ward_id FK
+        enum room_type "PRIVATE, SHARED"
+        enum compatibility_rule "NONE, SAME_SEX"
+    }
+    BED {
+        string id PK "e.g. 4M-102B"
+        string room_id FK
+        enum status "AVAILABLE, OCCUPIED, CLEANING, RESERVED, OUT_OF_SERVICE"
+        boolean isolation_capable
+        boolean monitoring_capable
+    }
+    PATIENT {
+        string id PK "e.g. P-1001"
+        string full_name
+        enum sex "FEMALE, MALE, UNKNOWN"
+    }
+    ASSIGNMENT {
+        int id PK
+        string patient_id FK "unique"
+        string bed_id FK "unique"
+        datetime created_at
+    }
+    ESCALATION {
+        int id PK
+        string patient_id FK
+        string reason
+        json requirements
+        json rejection_summary
+        enum status "OPEN, RESOLVED"
+        datetime created_at
+    }
+```
+
+Points worth noticing:
+
+- **Status and capability are separate.** A bed's `status` says whether it is free; `isolation_capable`, `monitoring_capable`, the room's type and the ward's status say whether it suits a patient. That is the difference between available and eligible.
+- **The sharing rule is data on the room.** `compatibility_rule` is configured per room because it is hospital policy, not a universal rule.
+- **An assignment is a row, and both of its foreign keys are unique.** A patient can hold one bed and a bed one patient. The database enforces this even if the application's checks were bypassed.
+- **Placement needs are not stored on the patient.** Ward type, isolation, monitoring and private room are stated in each request, so they appear only in an escalation's `requirements`.
+- **An escalation records why.** `rejection_summary` keeps the count of rejected beds by reason, so the person who picks it up does not have to search again.
+
 ## High-level flow
 
 ### Happy path

@@ -75,6 +75,7 @@ Implementation plan. Check items off as they are completed.
 ## 4. Documentation
 
 - [x] `docs/design.md`: happy path, failure paths, state diagram, intents and entities
+- [x] `docs/design.md`: entity-relationship diagram of the database
 - [x] `docs/scalability.md`: monitoring and evaluation, multi-workflow scaling, RAG, robustness (1–2 pages)
 - [x] `README.md`: overview, setup, test command, demo scenarios, where AI is used (runtime and build)
 
